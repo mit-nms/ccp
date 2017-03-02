@@ -77,11 +77,7 @@ func (sock *Sock) handleAck(rcvd *Packet) {
 			"rcvd":             rcvd,
 		}).Info("new ack")
 
-		if sock.cumAck-sock.notifiedAckNo > sock.ackNotifyThresh {
-			// notify control plane of new acks
-			// RPC / Protobuf stuff
-			sock.notifiedAckNo = sock.cumAck
-		}
+		sock.notifyAcks()
 	}
 }
 
