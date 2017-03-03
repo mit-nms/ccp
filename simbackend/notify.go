@@ -47,7 +47,7 @@ func writeAckMsg(out mmap.MM, ack uint32) {
 		return
 	}
 
-	notifyAckMsg, err := capnpMsg.NewNotifyAckMsg(seg)
+	notifyAckMsg, err := capnpMsg.NewRootNotifyAckMsg(seg)
 	if err != nil {
 		return
 	}

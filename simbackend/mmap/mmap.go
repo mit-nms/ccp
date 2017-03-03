@@ -9,15 +9,18 @@ import (
 	"zombiezen.com/go/capnproto2"
 )
 
+// use mmap'ed file as ring buffer
 type mbuf struct {
-	buf goMmap.MMap
+	buf  goMmap.MMap
+	rpos uint32
+	wpos uint32
 }
 
 type MM struct {
 	Enc *capnp.Encoder
 	Dec *capnp.Decoder
 	f   *os.File
-	mm  mbuf
+	mm  *mbuf
 }
 
 // mmap maps the given file into memory.
@@ -51,43 +54,67 @@ func MmapFile(file *os.File) (MM, error) {
 	}, nil
 }
 
-func mmap(file *os.File) (mbuf, error) {
+func mmap(file *os.File) (*mbuf, error) {
 	mm, err := goMmap.Map(file, goMmap.RDWR, 0)
 	if err != nil {
 		log.Error(err, file, goMmap.RDWR)
-		return mbuf{}, err
+		return nil, err
 	}
 
-	mbuf := mbuf{buf: mm}
+	mbuf := &mbuf{buf: mm}
 
 	return mbuf, nil
 }
 
 // implement io.Reader
-func (m mbuf) Read(p []byte) (n int, err error) {
-	if len(m.buf) > len(p) {
-		return 0, fmt.Errorf("read from mmap too big: %d", len(p))
-	}
+func (m *mbuf) Read(p []byte) (n int, err error) {
+	ring := append(m.buf[m.rpos:], m.buf[:m.rpos]...)
 
-	copy(p, m.buf)
+	n = copy(p, ring)
+	m.rpos += uint32(n) % uint32(len(m.buf))
 
-	return len(p), nil
+	log.WithFields(log.Fields{
+		"copied": n,
+		"wpos":   m.wpos,
+		"rpos":   m.rpos,
+		"read":   p,
+		"buf":    m.buf[:m.rpos],
+	}).Info("read from mmap")
+
+	return n, nil
 }
 
 // implement io.Writer
-func (m mbuf) Write(p []byte) (n int, err error) {
+func (m *mbuf) Write(p []byte) (n int, err error) {
 	if len(p) > len(m.buf) {
-		return 0, fmt.Errorf("write to mmap too big: %d", len(p))
+		return 0, fmt.Errorf("write to mmap too big: %d > %d", len(p), len(m.buf))
 	}
 
-	copy(m.buf, p)
+	n = copy(m.buf[m.wpos:], p)
+	m.wpos += uint32(n) % uint32(len(m.buf))
+	if n < len(p) {
+		// wrapped around, copy rest
+		n += copy(m.buf[m.wpos:], p[n:])
+		if n != len(p) {
+			return n, fmt.Errorf("wraparound error: %d < %d, wpos: %d", n, len(p), m.wpos)
+		}
+	}
 
-	return len(p), nil
+	log.WithFields(log.Fields{
+		"writeReq": len(p),
+		"copied":   n,
+		"wpos":     m.wpos,
+		"rpos":     m.rpos,
+		"write":    m.buf[:m.wpos],
+	}).Info("write to mmap")
+
+	return n, nil
 }
 
 func (m MM) Close() {
 	m.mm.buf.Unmap()
 	m.f.Close()
+	os.Remove(m.f.Name())
 	m.Enc = nil
 	m.Dec = nil
 }
