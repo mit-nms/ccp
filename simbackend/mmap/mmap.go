@@ -8,14 +8,20 @@ import (
 )
 
 // mmap maps the given file into memory.
-func Mmap(file string) (goMmap.MMap, error) {
+func Mmap(file string) (goMmap.MMap, *os.File, error) {
 	f, err := os.OpenFile(file, os.O_RDWR, 0777)
 	if err != nil {
 		log.Errorf("err opening file: %v", err)
-		return goMmap.MMap([]byte{}), err
+		return goMmap.MMap([]byte{}), nil, err
 	}
 
-	return MmapFile(f)
+	mm, err := MmapFile(f)
+	if err != nil {
+		log.Errorf("err opening file: %v", err)
+		return goMmap.MMap([]byte{}), nil, err
+	}
+
+	return mm, f, nil
 }
 
 func MmapFile(file *os.File) (goMmap.MMap, error) {
