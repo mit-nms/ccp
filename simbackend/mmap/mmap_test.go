@@ -33,18 +33,21 @@ func TestMmapRW(t *testing.T) {
 	}
 	defer os.Remove(FILENAME)
 
-	mm, f, err := Mmap(FILENAME)
+	f, err := os.OpenFile(FILENAME, os.O_RDWR, 0777)
 	if err != nil {
 		t.Error(err)
 	}
 
-	copy(mm, WR)
+	mm, err := mmap(f)
+	if err != nil {
+		t.Error(err)
+	}
 
-	mm.Flush()
-	mm.Unmap()
+	copy(mm.buf, WR)
+	mm.buf.Flush()
 	f.Close()
 
-	f, err = os.Open(FILENAME)
+	f, err = os.OpenFile(FILENAME, os.O_RDWR, 0777)
 	if err != nil {
 		t.Error(err)
 	}
@@ -89,7 +92,13 @@ func TestConcurrentMmapCommunication(t *testing.T) {
 }
 
 func reader(ready chan interface{}, wrote chan error, done chan error) {
-	mm, f, err := Mmap(FILENAME)
+	f, err := os.OpenFile(FILENAME, os.O_RDWR, 0777)
+	if err != nil {
+		done <- err
+		return
+	}
+
+	mm, err := mmap(f)
 	if err != nil {
 		done <- err
 		return
@@ -97,8 +106,8 @@ func reader(ready chan interface{}, wrote chan error, done chan error) {
 
 	// before writer does its thing, expect nothing here
 	expected := bytes.Repeat([]byte{'0'}, 10)
-	for i := 0; i < len(mm); i++ {
-		if mm[i] != expected[i] {
+	for i := 0; i < len(mm.buf); i++ {
+		if mm.buf[i] != expected[i] {
 			done <- fmt.Errorf("expected: %v\ngot: %v", expected, mm)
 			return
 		}
@@ -114,20 +123,26 @@ func reader(ready chan interface{}, wrote chan error, done chan error) {
 	}
 
 	// after, expect what the writer wrote
-	for i := 0; i < len(mm); i++ {
-		if mm[i] != expected[i] {
+	for i := 0; i < len(mm.buf); i++ {
+		if mm.buf[i] != expected[i] {
 			done <- fmt.Errorf("expected: %v\ngot: %v", expected, mm)
 			return
 		}
 	}
 
 	done <- nil
-	mm.Unmap()
+	mm.buf.Unmap()
 	f.Close()
 }
 
 func writer(ready chan interface{}, wrote chan error) {
-	mm, f, err := Mmap(FILENAME)
+	f, err := os.OpenFile(FILENAME, os.O_RDWR, 0777)
+	if err != nil {
+		wrote <- err
+		return
+	}
+
+	mm, err := mmap(f)
 	if err != nil {
 		wrote <- err
 		return
@@ -135,10 +150,10 @@ func writer(ready chan interface{}, wrote chan error) {
 
 	<-ready
 
-	copy(mm, []byte(WR))
+	copy(mm.buf, []byte(WR))
 
 	wrote <- nil
-	mm.Unmap()
+	mm.buf.Unmap()
 	f.Close()
 }
 
@@ -154,25 +169,37 @@ func BenchmarkConcurrentMmap(b *testing.B) {
 	b.StartTimer()
 
 	go func() {
-		mm, _, err := Mmap(FILENAME)
+		f, err := os.OpenFile(FILENAME, os.O_RDWR, 0777)
+		if err != nil {
+			done <- err
+			return
+		}
+
+		mm, err := mmap(f)
 		if err != nil {
 			done <- err
 			return
 		}
 
 		for {
-			writerBench(mm, ready, wrote)
+			writerBench(mm.buf, ready, wrote)
 		}
 	}()
 	go func() {
-		mm, _, err := Mmap(FILENAME)
+		f, err := os.OpenFile(FILENAME, os.O_RDWR, 0777)
+		if err != nil {
+			done <- err
+			return
+		}
+
+		mm, err := mmap(f)
 		if err != nil {
 			done <- err
 			return
 		}
 
 		for {
-			readerBench(mm, ready, wrote, done)
+			readerBench(mm.buf, ready, wrote, done)
 		}
 	}()
 

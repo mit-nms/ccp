@@ -3,6 +3,7 @@ package simbackend
 import (
 	"fmt"
 	"net"
+	"simbackend/mmap"
 	"sync"
 
 	log "github.com/Sirupsen/logrus"
@@ -28,10 +29,14 @@ type Sock struct {
 	notifiedAckNo   uint32
 	notifiedDataNo  uint32
 	ackNotifyThresh uint32
+	cwnd            uint32
+	inFlight        uint32
 
-	cwnd     uint32
-	inFlight uint32
+	// communication with CCP
+	mmIn  mmap.MM
+	mmOut mmap.MM
 
+	// synchronization
 	shouldTx   chan interface{}
 	shouldPass chan interface{}
 	passUp     chan []byte
@@ -71,6 +76,8 @@ func Socket(ip string, port string, name string) (*Sock, error) {
 		shouldPass:      make(chan interface{}, 1),
 		passUp:          make(chan []byte),
 	}
+
+	s.setupMmap()
 
 	log.WithFields(log.Fields{
 		"ip":   ip,
