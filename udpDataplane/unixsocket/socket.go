@@ -4,7 +4,7 @@ import (
 	"net"
 	"os"
 
-	"simbackend/ipc"
+	"udpDataplane/ipc"
 
 	log "github.com/Sirupsen/logrus"
 	"zombiezen.com/go/capnproto2"

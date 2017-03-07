@@ -1,7 +1,7 @@
 package ipc
 
 import (
-	capnpMsg "simbackend/capnpMsg"
+	capnpMsg "udpDataplane/capnpMsg"
 
 	"zombiezen.com/go/capnproto2"
 )

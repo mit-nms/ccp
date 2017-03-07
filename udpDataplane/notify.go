@@ -1,8 +1,8 @@
-package simbackend
+package udpDataplane
 
 import (
-	"simbackend/ipc"
-	"simbackend/mmap"
+	"udpDataplane/ipc"
+	"udpDataplane/mmap"
 )
 
 func (sock *Sock) setupIpc() error {

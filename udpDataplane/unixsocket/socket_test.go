@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	capnpMsg "simbackend/capnpMsg"
+	capnpMsg "udpDataplane/capnpMsg"
 
 	"zombiezen.com/go/capnproto2"
 )

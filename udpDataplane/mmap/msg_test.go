@@ -7,8 +7,8 @@ import (
 	"time"
 
 	log "github.com/Sirupsen/logrus"
-	capnpMsg "simbackend/capnpMsg"
 	"testing"
+	capnpMsg "udpDataplane/capnpMsg"
 	"zombiezen.com/go/capnproto2"
 )
 

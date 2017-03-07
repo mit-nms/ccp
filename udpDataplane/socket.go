@@ -1,11 +1,11 @@
-package simbackend
+package udpDataplane
 
 import (
 	"fmt"
 	"net"
 	"sync"
 
-	"simbackend/ipc"
+	"udpDataplane/ipc"
 
 	log "github.com/Sirupsen/logrus"
 	"github.mit.edu/hari/nimbus-cc/packetops"

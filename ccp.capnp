@@ -1,7 +1,7 @@
 using Go = import "/go.capnp";
 @0xaecc846565bc5f9c;
 $Go.package("capnpMsg");
-$Go.import("simbackend/capnpMsg");
+$Go.import("udpDataplane/capnpMsg");
 
 struct NotifyAckMsg {
     socketId @0 :UInt32;
