@@ -3,10 +3,7 @@ package mmap
 import (
 	"time"
 
-	capnpMsg "simbackend/capnpMsg"
 	"simbackend/ipc"
-
-	"zombiezen.com/go/capnproto2"
 )
 
 type MMapIpc struct {
@@ -38,19 +35,10 @@ func (m MMapIpc) Close() error {
 }
 
 func (m MMapIpc) Send(socketId uint32, ackNo uint32) error {
-	// Cap'n Proto! Message passing interface to mmap file
-	msg, seg, err := capnp.NewMessage(capnp.SingleSegment(nil))
+	msg, err := ipc.NotifyAckMsg(socketId, ackNo)
 	if err != nil {
 		return err
 	}
-
-	notifyAckMsg, err := capnpMsg.NewRootNotifyAckMsg(seg)
-	if err != nil {
-		return err
-	}
-
-	notifyAckMsg.SetSocketId(4)
-	notifyAckMsg.SetAckNo(ackNo)
 
 	return m.out.Enc.Encode(msg)
 }
@@ -87,20 +75,11 @@ func (m MMapIpc) doDecode() (cwnd uint32, err error) {
 		return
 	}
 
-	cwnd, err = readCwndMsg(msg)
+	cwnd, err = ipc.ReadCwndMsg(msg)
 	if err != nil {
 		m.in.mm.reset()
 		return
 	}
 
 	return
-}
-
-func readCwndMsg(msg *capnp.Message) (uint32, error) {
-	cwndUpdateMsg, err := capnpMsg.ReadRootSetCwndMsg(msg)
-	if err != nil {
-		return 0, err
-	}
-
-	return cwndUpdateMsg.Cwnd(), nil
 }
