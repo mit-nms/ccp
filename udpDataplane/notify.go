@@ -1,8 +1,8 @@
 package udpDataplane
 
 import (
-	"udpDataplane/ipc"
-	"udpDataplane/mmap"
+	"ccp/ipc"
+	"ccp/mmap"
 )
 
 func (sock *Sock) setupIpc() error {

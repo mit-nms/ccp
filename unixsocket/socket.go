@@ -4,7 +4,7 @@ import (
 	"net"
 	"os"
 
-	"udpDataplane/ipc"
+	"ccp/ipc"
 
 	log "github.com/Sirupsen/logrus"
 	"zombiezen.com/go/capnproto2"

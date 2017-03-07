@@ -5,7 +5,7 @@ import (
 	"net"
 	"sync"
 
-	"udpDataplane/ipc"
+	"ccp/ipc"
 
 	log "github.com/Sirupsen/logrus"
 	"github.mit.edu/hari/nimbus-cc/packetops"

@@ -3,7 +3,7 @@ package mmap
 import (
 	"time"
 
-	"udpDataplane/ipc"
+	"ccp/ipc"
 )
 
 type MMapIpc struct {

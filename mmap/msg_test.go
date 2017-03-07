@@ -4,11 +4,12 @@ import (
 	"bytes"
 	"fmt"
 	"os"
+	"testing"
 	"time"
 
+	capnpMsg "ccp/capnpMsg"
+
 	log "github.com/Sirupsen/logrus"
-	"testing"
-	capnpMsg "udpDataplane/capnpMsg"
 	"zombiezen.com/go/capnproto2"
 )
 
