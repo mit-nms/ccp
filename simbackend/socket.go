@@ -3,8 +3,9 @@ package simbackend
 import (
 	"fmt"
 	"net"
-	"simbackend/mmap"
 	"sync"
+
+	"simbackend/ipc"
 
 	log "github.com/Sirupsen/logrus"
 	"github.mit.edu/hari/nimbus-cc/packetops"
@@ -33,8 +34,7 @@ type Sock struct {
 	inFlight        uint32
 
 	// communication with CCP
-	mmIn  mmap.MM
-	mmOut mmap.MM
+	ipc ipc.IpcLayer
 
 	// synchronization
 	shouldTx   chan interface{}
@@ -77,13 +77,16 @@ func Socket(ip string, port string, name string) (*Sock, error) {
 		passUp:          make(chan []byte),
 	}
 
-	s.setupMmap()
-
 	log.WithFields(log.Fields{
 		"ip":   ip,
 		"port": port,
 		"name": s.name,
 	}).Info("created socket!")
+
+	err = s.setupIpc()
+	if err != nil {
+		return nil, err
+	}
 
 	go s.rx()
 	go s.tx()

@@ -1,33 +1,29 @@
 package simbackend
 
 import (
+	"simbackend/ipc"
 	"simbackend/mmap"
-
-	capnpMsg "simbackend/capnpMsg"
-	"zombiezen.com/go/capnproto2"
 )
 
-func (sock *Sock) setupMmap() error {
-	mm, err := mmap.Mmap("/tmp/ccp-in")
+func (sock *Sock) setupIpc() error {
+	ipc, err := mmap.Setup()
 	if err != nil {
 		return err
 	}
 
-	sock.mmOut = mm
+	sock.ipc = ipc
 
-	mm, err = mmap.Mmap("/tmp/ccp-out")
+	// start listening for cwnd changes
+	cwndChanges, err := sock.ipc.Listen()
 	if err != nil {
 		return err
 	}
 
-	sock.mmIn = mm
-
-	return nil
-}
-
-func (sock *Sock) teardownMmap() error {
-	sock.mmIn.Close()
-	sock.mmOut.Close()
+	go func(ch chan uint32) {
+		for cwnd := range ch {
+			sock.cwnd = cwnd
+		}
+	}(cwndChanges)
 
 	return nil
 }
@@ -36,26 +32,12 @@ func (sock *Sock) notifyAcks() {
 	if sock.cumAck-sock.notifiedAckNo > sock.ackNotifyThresh {
 		// notify control plane of new acks
 		sock.notifiedAckNo = sock.cumAck
-		go writeAckMsg(sock.mmOut, sock.notifiedAckNo)
+		go writeAckMsg(sock.ipc, sock.notifiedAckNo)
 	}
 }
 
-func writeAckMsg(out mmap.MM, ack uint32) {
-	// Cap'n Proto! Message passing interface to mmap file
-	msg, seg, err := capnp.NewMessage(capnp.SingleSegment(nil))
-	if err != nil {
-		return
-	}
-
-	notifyAckMsg, err := capnpMsg.NewRootNotifyAckMsg(seg)
-	if err != nil {
-		return
-	}
-
-	notifyAckMsg.SetSocketId(4)
-	notifyAckMsg.SetAckNo(ack)
-
-	err = out.Enc.Encode(msg)
+func writeAckMsg(out ipc.IpcLayer, ack uint32) {
+	err := out.Send(0, ack)
 	if err != nil {
 		return
 	}

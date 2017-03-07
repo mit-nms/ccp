@@ -1,8 +1,10 @@
 package mmap
 
 import (
+	"bytes"
 	"fmt"
 	"os"
+	"time"
 
 	log "github.com/Sirupsen/logrus"
 	capnpMsg "simbackend/capnpMsg"
@@ -10,17 +12,73 @@ import (
 	"zombiezen.com/go/capnproto2"
 )
 
-func setup1(s int) error {
-	f, err := os.Create(FILENAME)
+func TestBadMsg(t *testing.T) {
+	b := bytes.Repeat([]byte{0}, 24)
+	buf := bytes.NewBuffer(b)
+	sid, ackno, err := doDecode(buf)
+	if err == nil {
+		t.Errorf("expected errors, got socketId: %d, ackNo %d", sid, ackno)
+	}
+}
+
+func TestPoll(t *testing.T) {
+	b := new(bytes.Buffer)
+	go waitToWrite(b)
+	for _ = range time.Tick(time.Microsecond) {
+		sid, ackno, err := doDecode(b)
+		if err != nil {
+			continue
+		}
+
+		if sid != 4 || ackno != 42 {
+			t.Errorf("wrong message\ngot (%v, %v)\nexpected (%v, %v)", sid, ackno, 4, 42)
+			return
+		}
+		break
+	}
+}
+
+func waitToWrite(b *bytes.Buffer) error {
+	msg, seg, err := capnp.NewMessage(capnp.SingleSegment(nil))
 	if err != nil {
 		return err
 	}
 
-	f.Seek(int64(s), 0)
-	f.Write([]byte{0})
+	foo, err := capnpMsg.NewRootNotifyAckMsg(seg)
+	if err != nil {
+		return err
+	}
 
-	f.Close()
+	foo.SetSocketId(4)
+	foo.SetAckNo(42)
+
+	dec := capnp.NewEncoder(b)
+	go func() {
+		<-time.After(time.Second)
+		dec.Encode(msg)
+	}()
 	return nil
+}
+
+func doDecode(buf *bytes.Buffer) (sockId uint32, ackno uint32, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = r.(error)
+			return
+		}
+	}()
+
+	msg, err := capnp.NewDecoder(buf).Decode()
+	if err != nil {
+		return
+	}
+
+	ack, err := capnpMsg.ReadRootNotifyAckMsg(msg)
+	if err != nil {
+		return
+	}
+
+	return ack.SocketId(), ack.AckNo(), err
 }
 
 func TestEncodeMsg(t *testing.T) {
@@ -30,7 +88,7 @@ func TestEncodeMsg(t *testing.T) {
 		return
 	}
 
-	foo, err := capnpMsg.NewNotifyAckMsg(seg)
+	foo, err := capnpMsg.NewRootNotifyAckMsg(seg)
 	if err != nil {
 		t.Error(err)
 		return
@@ -45,10 +103,6 @@ func TestEncodeMsg(t *testing.T) {
 		return
 	}
 
-	t.Logf("marshalled buf: %v", buf)
-	copy(buf[8:16], []byte{0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00})
-	t.Logf("marsh buf, mod: %v", buf)
-
 	decMsg, err := capnp.Unmarshal(buf)
 	if err != nil {
 		t.Error(err)
@@ -61,12 +115,23 @@ func TestEncodeMsg(t *testing.T) {
 		return
 	}
 
-	t.Logf("socketId: %d, ackNo %d", ackMsg.SocketId(), ackMsg.AckNo())
-
 	if ackMsg.SocketId() != 4 || ackMsg.AckNo() != 42 {
 		t.Errorf("wrong message\ngot (%v, %v)\nexpected (%v, %v)", ackMsg.SocketId(), ackMsg.AckNo(), 4, 42)
 		return
 	}
+}
+
+func setup1(s int) error {
+	f, err := os.Create(FILENAME)
+	if err != nil {
+		return err
+	}
+
+	f.Seek(int64(s), 0)
+	f.Write([]byte{0})
+
+	f.Close()
+	return nil
 }
 
 func TestCommunicateMsg(t *testing.T) {
@@ -109,10 +174,6 @@ func readerProto(ready chan interface{}, wrote chan error, done chan error) {
 		done <- err
 		return
 	}
-
-	log.WithFields(log.Fields{
-		"numSeg": msg.NumSegments(),
-	}).Info("read msg")
 
 	ackMsg, err := capnpMsg.ReadRootNotifyAckMsg(msg)
 	if err != nil {

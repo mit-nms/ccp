@@ -1,6 +1,7 @@
 package mmap
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 
@@ -25,15 +26,30 @@ type MM struct {
 
 // mmap maps the given file into memory.
 func Mmap(file string) (MM, error) {
-	f, err := os.OpenFile(file, os.O_RDWR, 0777)
+	c, err := os.OpenFile(file, os.O_CREATE|os.O_TRUNC|os.O_RDWR, 0666)
 	if err != nil {
-		log.Errorf("err opening file: %v", err)
+		log.Errorf("err creating file %s: %v", file, err)
+		return MM{}, err
+	}
+	_, err = c.Seek(1023, 0)
+	if err != nil {
+		log.Error(err)
+	}
+	_, err = c.Write([]byte{0})
+	if err != nil {
+		log.Error(err)
+	}
+	c.Close()
+
+	f, err := os.OpenFile(file, os.O_RDWR, 0666)
+	if err != nil {
+		log.Errorf("err opening file %s: %v", file, err)
 		return MM{}, err
 	}
 
 	mm, err := MmapFile(f)
 	if err != nil {
-		log.Errorf("err opening file: %v", err)
+		log.Errorf("err mmap'ing file %s: %v", file, err)
 		return MM{}, err
 	}
 
@@ -57,29 +73,32 @@ func MmapFile(file *os.File) (MM, error) {
 func mmap(file *os.File) (*mbuf, error) {
 	mm, err := goMmap.Map(file, goMmap.RDWR, 0)
 	if err != nil {
-		log.Error(err, file, goMmap.RDWR)
 		return nil, err
 	}
+
+	mm.Lock()
 
 	mbuf := &mbuf{buf: mm}
 
 	return mbuf, nil
 }
 
+func (m *mbuf) reset() {
+	m.rpos = 0
+	m.wpos = 0
+}
+
 // implement io.Reader
 func (m *mbuf) Read(p []byte) (n int, err error) {
+	rep := bytes.Repeat([]byte{0}, len(m.buf))
+	if bytes.Equal(m.buf[:], rep) {
+		return 0, err
+	}
+
 	ring := append(m.buf[m.rpos:], m.buf[:m.rpos]...)
 
 	n = copy(p, ring)
 	m.rpos += uint32(n) % uint32(len(m.buf))
-
-	log.WithFields(log.Fields{
-		"copied": n,
-		"wpos":   m.wpos,
-		"rpos":   m.rpos,
-		"read":   p,
-		"buf":    m.buf[:m.rpos],
-	}).Info("read from mmap")
 
 	return n, nil
 }
@@ -100,18 +119,10 @@ func (m *mbuf) Write(p []byte) (n int, err error) {
 		}
 	}
 
-	log.WithFields(log.Fields{
-		"writeReq": len(p),
-		"copied":   n,
-		"wpos":     m.wpos,
-		"rpos":     m.rpos,
-		"write":    m.buf[:m.wpos],
-	}).Info("write to mmap")
-
 	return n, nil
 }
 
-func (m MM) Close() {
+func (m *MM) Close() {
 	m.mm.buf.Unmap()
 	m.f.Close()
 	os.Remove(m.f.Name())
