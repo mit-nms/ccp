@@ -10,6 +10,10 @@ import (
 func (sock *Sock) rx() {
 	rcvd := &Packet{}
 	for {
+		if sock.checkClosed() {
+			return
+		}
+
 		err := sock.doRx(rcvd)
 		if err != nil {
 			fmt.Println(err)

@@ -1,19 +1,23 @@
 package mmap
 
 import (
+	"bytes"
+	"fmt"
 	"time"
 
-	"ccp/ipc"
+	"ccp/ipcBackend"
+
+	"zombiezen.com/go/capnproto2"
 )
 
 type MMapIpc struct {
 	in  MM
 	out MM
 
-	ipc.BaseIpcLayer
+	listenCh chan *capnp.Message
 }
 
-func Setup() (ipc.IpcLayer, error) {
+func Setup() (ipcbackend.Backend, error) {
 	in, err := Mmap("/tmp/ccp-in")
 	if err != nil {
 		return nil, err
@@ -25,24 +29,25 @@ func Setup() (ipc.IpcLayer, error) {
 	}
 
 	return &MMapIpc{
-		in:  in,
-		out: out,
+		in:       in,
+		out:      out,
+		listenCh: make(chan *capnp.Message),
 	}, nil
 }
 
 func (m MMapIpc) Close() error {
 	m.in.Close()
 	m.out.Close()
+	os.RemoveAll(fmt.Sprintf("/tmp/%d", m.sockid))
 	return nil
 }
 
-func (m *MMapIpc) SendAckMsg(socketId uint32, ackNo uint32) error {
-	msg, err := ipc.MakeNotifyAckMsg(socketId, ackNo)
-	if err != nil {
-		return err
-	}
-
+func (m *MMapIpc) SendMsg(msg *capnp.Message) error {
 	return m.out.Enc.Encode(msg)
+}
+
+func (m *MMapIpc) ListenMsg() (chan *capnp.Message, error) {
+	return m.listenCh, nil
 }
 
 func (m MMapIpc) pollMmap() {
@@ -55,13 +60,14 @@ func (m MMapIpc) pollMmap() {
 }
 
 func (m *MMapIpc) doDecode() (err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			err = r.(error)
-			m.in.mm.reset()
-			return
-		}
-	}()
+	// check first 64 bits. if 0s, no message
+	first64 := m.in.mm.buf[:8]
+	if bytes.Equal(
+		[]byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
+		first64,
+	) {
+		return fmt.Errorf("empty buf")
+	}
 
 	msg, err := m.in.Dec.Decode()
 	if err != nil {
@@ -69,10 +75,6 @@ func (m *MMapIpc) doDecode() (err error) {
 		return
 	}
 
-	err = m.Parse(msg)
-	if err != nil {
-		m.in.mm.reset()
-	}
-
+	m.listenCh <- msg
 	return
 }

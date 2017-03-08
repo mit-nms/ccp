@@ -1,108 +1,47 @@
 package mmap
 
 import (
-	"bytes"
 	"fmt"
 	"os"
 	"testing"
-	"time"
 
+	"ccp/capnpMsg"
 	"ccp/ipc"
 
 	log "github.com/Sirupsen/logrus"
 	"zombiezen.com/go/capnproto2"
 )
 
-func TestBadMsg(t *testing.T) {
-	b := bytes.Repeat([]byte{0}, 24)
-	buf := bytes.NewBuffer(b)
-	sid, ackno, err := doDecode(buf)
-	if err == nil {
-		t.Errorf("expected errors, got socketId: %d, ackNo %d", sid, ackno)
+func makeNotifyAckMsg(socketId uint32, ackNo uint32) (*capnp.Message, error) {
+	// Cap'n Proto! Message passing interface to mmap file
+	msg, seg, err := capnp.NewMessage(capnp.SingleSegment(nil))
+	if err != nil {
+		return nil, err
 	}
+
+	notifyAckMsg, err := capnpMsg.NewRootUIntMsg(seg)
+	if err != nil {
+		return nil, err
+	}
+
+	notifyAckMsg.SetType(capnpMsg.MsgType_ack)
+	notifyAckMsg.SetSocketId(socketId)
+	notifyAckMsg.SetVal(ackNo)
+
+	return msg, nil
 }
 
-func TestPoll(t *testing.T) {
-	b := new(bytes.Buffer)
-	go waitToWrite(b)
-	for _ = range time.Tick(time.Microsecond) {
-		sid, ackno, err := doDecode(b)
-		if err != nil {
-			continue
-		}
-
-		if sid != 4 || ackno != 42 {
-			t.Errorf("wrong message\ngot (%v, %v)\nexpected (%v, %v)", sid, ackno, 4, 42)
-			return
-		}
-		break
-	}
-}
-
-func waitToWrite(b *bytes.Buffer) error {
-	msg, err := ipc.MakeNotifyAckMsg(4, 42)
+func readAckMsg(msg *capnp.Message) (ipc.AckMsg, error) {
+	ackMsg, err := capnpMsg.ReadRootUIntMsg(msg)
 	if err != nil {
-		return err
+		return ipc.AckMsg{}, err
 	}
 
-	dec := capnp.NewEncoder(b)
-	go func() {
-		<-time.After(time.Second)
-		dec.Encode(msg)
-	}()
-	return nil
-}
-
-func doDecode(buf *bytes.Buffer) (sockId uint32, ackno uint32, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			err = r.(error)
-			return
-		}
-	}()
-
-	msg, err := capnp.NewDecoder(buf).Decode()
-	if err != nil {
-		return
+	if ackMsg.Type() != capnpMsg.MsgType_ack {
+		return ipc.AckMsg{}, fmt.Errorf("Message not of type Ack: %v", ackMsg.Type())
 	}
 
-	ack, err := ipc.ReadAckMsg(msg)
-	if err != nil {
-		return
-	}
-
-	return ack.SocketId, ack.AckNo, err
-}
-
-func TestEncodeMsg(t *testing.T) {
-	msg, err := ipc.MakeNotifyAckMsg(4, 42)
-	if err != nil {
-		t.Error(err)
-		return
-	}
-
-	buf, err := msg.Marshal()
-	if err != nil {
-		t.Error(err)
-		return
-	}
-
-	decMsg, err := capnp.Unmarshal(buf)
-	if err != nil {
-		t.Error(err)
-		return
-	}
-
-	ackMsg, err := ipc.ReadAckMsg(decMsg)
-	if err != nil {
-		t.Error(err)
-		return
-	}
-
-	if ackMsg.SocketId != 4 || ackMsg.AckNo != 42 {
-		t.Errorf("wrong message\ngot (%v, %v)\nexpected (%v, %v)", ackMsg.SocketId, ackMsg.AckNo, 4, 42)
-		return
-	}
+	return ipc.AckMsg{SocketId: ackMsg.SocketId(), AckNo: ackMsg.Val()}, nil
 }
 
 func setup1(s int) error {
@@ -159,7 +98,7 @@ func readerProto(ready chan interface{}, wrote chan error, done chan error) {
 		return
 	}
 
-	ackMsg, err := ipc.ReadAckMsg(msg)
+	ackMsg, err := readAckMsg(msg)
 	if err != nil {
 		done <- err
 		return
@@ -181,7 +120,7 @@ func writerProto(ready chan interface{}, wrote chan error) {
 		return
 	}
 
-	msg, err := ipc.MakeNotifyAckMsg(4, 42)
+	msg, err := makeNotifyAckMsg(4, 42)
 	if err != nil {
 		wrote <- err
 		return

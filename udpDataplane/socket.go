@@ -3,6 +3,8 @@ package udpDataplane
 import (
 	"fmt"
 	"net"
+	"strconv"
+	"strings"
 	"sync"
 
 	"ccp/ipc"
@@ -34,7 +36,7 @@ type Sock struct {
 	inFlight        uint32
 
 	// communication with CCP
-	ipc ipc.IpcLayer
+	ipc ipc.Ipc
 
 	// synchronization
 	shouldTx   chan interface{}
@@ -83,8 +85,23 @@ func Socket(ip string, port string, name string) (*Sock, error) {
 		"name": s.name,
 	}).Info("created socket!")
 
-	err = s.setupIpc()
+	addr := s.conn.LocalAddr().String()
+	spl := strings.Split(addr, ":")
+	lport, err := strconv.Atoi(spl[1])
 	if err != nil {
+		log.WithFields(log.Fields{
+			"name":  s.name,
+			"addr":  spl,
+			"lport": lport,
+		}).Warn(err)
+		lport = 42424
+	}
+
+	err = s.setupIpc(uint32(lport))
+	if err != nil {
+		log.WithFields(log.Fields{
+			"name": s.name,
+		}).Error(err)
 		return nil, err
 	}
 
@@ -191,5 +208,7 @@ func (sock *Sock) Close() error {
 
 	sock.conn = nil
 	close(sock.passUp)
+
+	sock.ipc.Close()
 	return nil
 }

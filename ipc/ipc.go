@@ -1,145 +1,104 @@
 package ipc
 
 import (
-	"fmt"
+	"ccp/ipcBackend"
+	"ccp/unixsocket"
 
-	capnpMsg "ccp/capnpMsg"
-
-	log "github.com/Sirupsen/logrus"
 	"zombiezen.com/go/capnproto2"
 )
 
-type AckMsg struct {
-	SocketId uint32
-	AckNo    uint32
+type Ipc struct {
+	CreateNotify chan CreateMsg
+	AckNotify    chan AckMsg
+	CwndNotify   chan CwndMsg
+
+	backend ipcbackend.Backend
 }
 
-type CwndMsg struct {
-	SocketId uint32
-	Cwnd     uint32
-}
-
-type IpcLayer interface {
-	SendAckMsg(socketId uint32, ackNo uint32) error
-	SendCwndMsg(socketId uint32, cwnd uint32) error
-	ListenAckMsg() (chan AckMsg, error)
-	ListenCwndMsg() (chan CwndMsg, error)
-	Close() error
-}
-
-type BaseIpcLayer struct {
-	AckNotify  chan AckMsg
-	CwndNotify chan CwndMsg
-}
-
-func (b *BaseIpcLayer) SendAckMsg(socketId uint32, ackNo uint32) error {
-	return fmt.Errorf("SendAckMsg unimplemented in BaseIpcLayer")
-}
-
-func (b *BaseIpcLayer) SendCwndMsg(socketId uint32, ackNo uint32) error {
-	return fmt.Errorf("SendCwndMsg unimplemented in BaseIpcLayer")
-}
-
-func (b *BaseIpcLayer) ListenAckMsg() (chan AckMsg, error) {
-	return b.AckNotify, nil
-}
-
-func (b *BaseIpcLayer) ListenCwndMsg() (chan CwndMsg, error) {
-	return b.CwndNotify, nil
-}
-
-func (b *BaseIpcLayer) Close() error {
-	return fmt.Errorf("Close unimplemented in BaseIpcLayer")
-}
-
-func (b *BaseIpcLayer) Parse(msg *capnp.Message) error {
-	if msg, err := ReadCwndMsg(msg); err == nil {
-		select {
-		case b.CwndNotify <- msg:
-		default:
-			log.WithFields(log.Fields{
-				"msg": msg,
-			}).Warn("dropping message")
-		}
-
-		return nil
+func Setup(sockid uint32) (Ipc, error) {
+	back, err := unixsocket.SetupClient(sockid)
+	if err != nil {
+		return Ipc{}, err
 	}
 
-	if msg, err := ReadAckMsg(msg); err == nil {
-		select {
-		case b.AckNotify <- msg:
-		default:
-			log.WithFields(log.Fields{
-				"msg": msg,
-			}).Warn("dropping message")
-		}
+	return SetupWithBackend(back)
+}
 
-		return nil
-	} else {
+func SetupWithBackend(back ipcbackend.Backend) (Ipc, error) {
+	i := Ipc{
+		CreateNotify: make(chan CreateMsg),
+		AckNotify:    make(chan AckMsg),
+		CwndNotify:   make(chan CwndMsg),
+		backend:      back,
+	}
+
+	ch, err := i.backend.ListenMsg()
+	if err != nil {
+		return Ipc{}, err
+	}
+
+	go i.parse(ch)
+	return i, nil
+}
+
+func (i *Ipc) SendCreateMsg(socketId uint32, alg string) error {
+	msg, err := makeCreateMsg(socketId, alg)
+	if err != nil {
 		return err
 	}
+
+	return i.backend.SendMsg(msg)
 }
 
-func MakeNotifyAckMsg(socketId uint32, ackNo uint32) (*capnp.Message, error) {
-	// Cap'n Proto! Message passing interface to mmap file
-	msg, seg, err := capnp.NewMessage(capnp.SingleSegment(nil))
+func (i *Ipc) SendAckMsg(socketId uint32, ackNo uint32) error {
+	msg, err := makeNotifyAckMsg(socketId, ackNo)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	notifyAckMsg, err := capnpMsg.NewRootUIntMsg(seg)
-	if err != nil {
-		return nil, err
-	}
-
-	notifyAckMsg.SetType(capnpMsg.UIntMsgType_ack)
-	notifyAckMsg.SetSocketId(socketId)
-	notifyAckMsg.SetVal(ackNo)
-
-	return msg, nil
+	return i.backend.SendMsg(msg)
 }
 
-func MakeCwndMsg(socketId uint32, cwnd uint32) (*capnp.Message, error) {
-	// Cap'n Proto! Message passing interface to mmap file
-	msg, seg, err := capnp.NewMessage(capnp.SingleSegment(nil))
+func (i *Ipc) SendCwndMsg(socketId uint32, cwnd uint32) error {
+	msg, err := makeCwndMsg(socketId, cwnd)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	cwndMsg, err := capnpMsg.NewRootUIntMsg(seg)
-	if err != nil {
-		return nil, err
-	}
-
-	cwndMsg.SetType(capnpMsg.UIntMsgType_cwnd)
-	cwndMsg.SetSocketId(socketId)
-	cwndMsg.SetVal(cwnd)
-
-	return msg, nil
+	return i.backend.SendMsg(msg)
 }
 
-func ReadAckMsg(msg *capnp.Message) (AckMsg, error) {
-	ackMsg, err := capnpMsg.ReadRootUIntMsg(msg)
-	if err != nil {
-		return AckMsg{}, err
-	}
-
-	if ackMsg.Type() != capnpMsg.UIntMsgType_ack {
-		return AckMsg{}, fmt.Errorf("Message not of type Ack: %v", ackMsg.Type())
-	}
-
-	return AckMsg{SocketId: ackMsg.SocketId(), AckNo: ackMsg.Val()}, nil
+func (i *Ipc) ListenCreateMsg() (chan CreateMsg, error) {
+	return i.CreateNotify, nil
 }
 
-func ReadCwndMsg(msg *capnp.Message) (CwndMsg, error) {
-	cwndUpdateMsg, err := capnpMsg.ReadRootUIntMsg(msg)
-	if err != nil {
-		return CwndMsg{}, err
-	}
+func (i *Ipc) ListenAckMsg() (chan AckMsg, error) {
+	return i.AckNotify, nil
+}
 
-	if cwndUpdateMsg.Type() != capnpMsg.UIntMsgType_cwnd {
-		return CwndMsg{}, fmt.Errorf("Message not of type Cwnd: %v", cwndUpdateMsg.Type())
-	}
+func (i *Ipc) ListenCwndMsg() (chan CwndMsg, error) {
+	return i.CwndNotify, nil
+}
 
-	return CwndMsg{SocketId: cwndUpdateMsg.SocketId(), Cwnd: cwndUpdateMsg.Val()}, nil
+func (i *Ipc) Close() error {
+	return i.backend.Close()
+}
+
+func (i *Ipc) parse(msgs chan *capnp.Message) {
+	for msg := range msgs {
+		if crMsg, err := readCreateMsg(msg); err == nil {
+			i.CreateNotify <- crMsg
+			continue
+		}
+
+		if akMsg, err := readAckMsg(msg); err == nil {
+			i.AckNotify <- akMsg
+			continue
+		}
+
+		if cwMsg, err := readCwndMsg(msg); err == nil {
+			i.CwndNotify <- cwMsg
+			continue
+		}
+	}
 }

@@ -63,6 +63,10 @@ func (sock *Sock) tx() {
 			log.Info("timeout!")
 		}
 
+		if sock.checkClosed() {
+			return
+		}
+
 		sock.doTx()
 	}
 }

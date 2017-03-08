@@ -1,10 +1,11 @@
 package unixsocket
 
 import (
+	"fmt"
 	"net"
 	"os"
 
-	"ccp/ipc"
+	"ccp/ipcBackend"
 
 	log "github.com/Sirupsen/logrus"
 	"zombiezen.com/go/capnproto2"
@@ -14,35 +15,65 @@ type SocketIpc struct {
 	in  *net.UnixConn
 	out *net.UnixConn
 
-	ipc.BaseIpcLayer
+	sockid uint32
+
+	listenCh chan *capnp.Message
 }
 
-func Setup() (ipc.IpcLayer, error) {
+func SetupCcp() (ipcbackend.Backend, error) {
 	addrIn, err := net.ResolveUnixAddr("unixgram", "/tmp/ccp-in")
 	if err != nil {
 		return nil, err
 	}
 
-	addrOut, err := net.ResolveUnixAddr("unixgram", "/tmp/ccp-out")
-	if err != nil {
-		return nil, err
-	}
-
-	in, err := net.ListenUnixgram("unixgram", addrOut)
+	in, err := net.ListenUnixgram("unixgram", addrIn)
 	if err != nil {
 		log.Error("listen error")
 		return nil, err
 	}
 
-	out, err := net.DialUnix("unixgram", nil, addrIn)
+	s := &SocketIpc{
+		in:       in,
+		listenCh: make(chan *capnp.Message),
+	}
+
+	go s.listen()
+	return s, nil
+}
+
+func SetupClient(sockid uint32) (ipcbackend.Backend, error) {
+	addrOut, err := net.ResolveUnixAddr("unixgram", "/tmp/ccp-in")
+	if err != nil {
+		return nil, err
+	}
+
+	out, err := net.DialUnix("unixgram", nil, addrOut)
 	if err != nil {
 		log.Error("dial error")
 		return nil, err
 	}
 
+	err = os.MkdirAll(fmt.Sprintf("/tmp/%d", sockid), 0755)
+	if err != nil {
+		return nil, err
+	}
+
+	addrIn, err := net.ResolveUnixAddr("unixgram", fmt.Sprintf("/tmp/%d/ccp-out", sockid))
+	if err != nil {
+		return nil, err
+	}
+
+	in, err := net.ListenUnixgram("unixgram", addrIn)
+	if err != nil {
+		log.Error("listen error")
+		return nil, err
+	}
+
 	s := &SocketIpc{
-		in:  in,
-		out: out,
+		in:       in,
+		out:      out,
+		sockid:   sockid,
+		listenCh: make(chan *capnp.Message),
 	}
 
 	go s.listen()
@@ -50,18 +81,19 @@ func Setup() (ipc.IpcLayer, error) {
 }
 
 func (s *SocketIpc) Close() error {
-	s.in.Close()
-	s.out.Close()
-	os.Remove("/tmp/ccp-out")
+	if s.in != nil {
+		s.in.Close()
+	}
+
+	if s.out != nil {
+		s.out.Close()
+	}
+
+	os.RemoveAll(fmt.Sprintf("/tmp/%d", s.sockid))
 	return nil
 }
 
-func (s *SocketIpc) SendAckMsg(socketId uint32, ackNo uint32) error {
-	msg, err := ipc.MakeNotifyAckMsg(socketId, ackNo)
-	if err != nil {
-		return err
-	}
-
+func (s *SocketIpc) SendMsg(msg *capnp.Message) error {
 	buf, err := msg.Marshal()
 	if err != nil {
 		return err
@@ -75,23 +107,8 @@ func (s *SocketIpc) SendAckMsg(socketId uint32, ackNo uint32) error {
 	return nil
 }
 
-func (s *SocketIpc) SendCwndMsg(socketId uint32, cwnd uint32) error {
-	msg, err := ipc.MakeCwndMsg(socketId, cwnd)
-	if err != nil {
-		return err
-	}
-
-	buf, err := msg.Marshal()
-	if err != nil {
-		return err
-	}
-
-	_, err = s.out.Write(buf)
-	if err != nil {
-		return err
-	}
-
-	return nil
+func (s *SocketIpc) ListenMsg() (chan *capnp.Message, error) {
+	return s.listenCh, nil
 }
 
 func (s *SocketIpc) listen() {
@@ -102,6 +119,6 @@ func (s *SocketIpc) listen() {
 			continue
 		}
 
-		s.Parse(msg)
+		s.listenCh <- msg
 	}
 }
