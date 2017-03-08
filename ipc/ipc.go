@@ -15,17 +15,40 @@ type Ipc struct {
 	backend ipcbackend.Backend
 }
 
-func Setup(sockid uint32) (Ipc, error) {
-	back, err := unixsocket.SetupClient(sockid)
+// handle of IPC to pass to CC implementations
+type SendOnly interface {
+	SendCwndMsg(socketId uint32, cwnd uint32) error
+}
+
+func SetupCcpListen() (*Ipc, error) {
+	back, err := unixsocket.New().SetupListen("ccp-in", 0).SetupFinish()
 	if err != nil {
-		return Ipc{}, err
+		return nil, err
 	}
 
 	return SetupWithBackend(back)
 }
 
-func SetupWithBackend(back ipcbackend.Backend) (Ipc, error) {
-	i := Ipc{
+func SetupCcpSend(sockid uint32) (SendOnly, error) {
+	back, err := unixsocket.New().SetupSend("ccp-out", sockid).SetupFinish()
+	if err != nil {
+		return nil, err
+	}
+
+	return SetupWithBackend(back)
+}
+
+func SetupCli(sockid uint32) (*Ipc, error) {
+	back, err := unixsocket.New().SetupSend("ccp-in", 0).SetupListen("ccp-out", sockid).SetupFinish()
+	if err != nil {
+		return nil, err
+	}
+
+	return SetupWithBackend(back)
+}
+
+func SetupWithBackend(back ipcbackend.Backend) (*Ipc, error) {
+	i := &Ipc{
 		CreateNotify: make(chan CreateMsg),
 		AckNotify:    make(chan AckMsg),
 		CwndNotify:   make(chan CwndMsg),
@@ -34,7 +57,7 @@ func SetupWithBackend(back ipcbackend.Backend) (Ipc, error) {
 
 	ch, err := i.backend.ListenMsg()
 	if err != nil {
-		return Ipc{}, err
+		return nil, err
 	}
 
 	go i.parse(ch)

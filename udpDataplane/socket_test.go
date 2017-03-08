@@ -3,12 +3,10 @@ package udpDataplane
 import (
 	"bytes"
 	"fmt"
-	"os"
 	"testing"
 	"time"
 
-	"ccp/ipcbackend"
-	"ccp/unixsocket"
+	"ccp/ipc"
 
 	log "github.com/Sirupsen/logrus"
 )
@@ -19,24 +17,27 @@ var rcvSock *Sock
 func TestBasicTransfer(t *testing.T) {
 	fmt.Println("starting...")
 	// create dummy ccp
-	ccp, err := unixsocket.SetupCcp()
+	ccp, err := ipc.SetupCcpListen()
 	if err != nil {
 		t.Error(err)
 		return
 	}
 
 	go dummyCcp(ccp)
-
 	testTransfer(t, bytes.Repeat([]byte{'a'}, 100))
-
-	os.Remove("/tmp/ccp-in")
+	ccp.Close()
 }
 
-func dummyCcp(ccp ipcbackend.Backend) {
-	msgs, _ := ccp.ListenMsg()
-	for msg := range msgs {
+func dummyCcp(ccp *ipc.Ipc) {
+	ackCh, err := ccp.ListenAckMsg()
+	if err != nil {
+		log.Error(err)
+		return
+	}
+
+	for ack := range ackCh {
 		log.WithFields(log.Fields{
-			"msg": msg,
+			"msg": ack,
 		}).Info("got msg")
 	}
 }

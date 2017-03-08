@@ -5,7 +5,7 @@ import (
 )
 
 func (sock *Sock) setupIpc(sockid uint32) error {
-	ipcL, err := ipc.Setup(sockid)
+	ipcL, err := ipc.SetupCli(sockid)
 	if err != nil {
 		return err
 	}
@@ -35,7 +35,7 @@ func (sock *Sock) notifyAcks() {
 	}
 }
 
-func writeAckMsg(out ipc.Ipc, ack uint32) {
+func writeAckMsg(out *ipc.Ipc, ack uint32) {
 	err := out.SendAckMsg(0, ack)
 	if err != nil {
 		return

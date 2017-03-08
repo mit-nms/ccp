@@ -36,7 +36,7 @@ type Sock struct {
 	inFlight        uint32
 
 	// communication with CCP
-	ipc ipc.Ipc
+	ipc *ipc.Ipc
 
 	// synchronization
 	shouldTx   chan interface{}

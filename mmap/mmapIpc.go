@@ -3,6 +3,7 @@ package mmap
 import (
 	"bytes"
 	"fmt"
+	"os"
 	"time"
 
 	"ccp/ipcBackend"
@@ -14,7 +15,75 @@ type MMapIpc struct {
 	in  MM
 	out MM
 
+	sockid   uint32
 	listenCh chan *capnp.Message
+	err      error
+}
+
+func New() ipcbackend.Backend {
+	return &MMapIpc{}
+}
+
+func (m *MMapIpc) SetupListen(loc string, id uint32) ipcbackend.Backend {
+	if m.err != nil {
+		return m
+	}
+
+	var mm MM
+	var err error
+	if id != 0 {
+		err = os.MkdirAll(fmt.Sprintf("/tmp/%d", id), 0755)
+		if err != nil {
+			m.err = err
+			return m
+		}
+
+		mm, err = Mmap(fmt.Sprintf("/tmp/%d/%s", id, loc))
+	} else {
+		mm, err = Mmap(fmt.Sprintf("/tmp/%s", loc))
+	}
+
+	if err != nil {
+		m.err = err
+		return m
+	}
+
+	m.in = mm
+	m.listenCh = make(chan *capnp.Message)
+	go m.pollMmap()
+	return m
+}
+
+func (m *MMapIpc) SetupSend(loc string, id uint32) ipcbackend.Backend {
+	if m.err != nil {
+		return m
+	}
+
+	var mm MM
+	var err error
+	if id != 0 {
+		err = os.MkdirAll(fmt.Sprintf("/tmp/%d", id), 0755)
+		if err != nil {
+			m.err = err
+			return m
+		}
+
+		mm, err = Mmap(fmt.Sprintf("/tmp/%d/%s", id, loc))
+	} else {
+		mm, err = Mmap(fmt.Sprintf("/tmp/%s", loc))
+	}
+
+	m.out = mm
+	m.sockid = id
+	return m
+}
+
+func (m *MMapIpc) SetupFinish() (ipcbackend.Backend, error) {
+	if m.err != nil {
+		return nil, m.err
+	} else {
+		return m, nil
+	}
 }
 
 func Setup() (ipcbackend.Backend, error) {

@@ -15,69 +15,96 @@ type SocketIpc struct {
 	in  *net.UnixConn
 	out *net.UnixConn
 
-	sockid uint32
-
-	listenCh chan *capnp.Message
+	openFiles []string
+	listenCh  chan *capnp.Message
+	err       error
 }
 
-func SetupCcp() (ipcbackend.Backend, error) {
-	addrIn, err := net.ResolveUnixAddr("unixgram", "/tmp/ccp-in")
-	if err != nil {
-		return nil, err
-	}
-
-	in, err := net.ListenUnixgram("unixgram", addrIn)
-	if err != nil {
-		log.Error("listen error")
-		return nil, err
-	}
-
-	s := &SocketIpc{
-		in:       in,
-		listenCh: make(chan *capnp.Message),
-	}
-
-	go s.listen()
-	return s, nil
+func New() ipcbackend.Backend {
+	return &SocketIpc{openFiles: make([]string, 0)}
 }
 
-func SetupClient(sockid uint32) (ipcbackend.Backend, error) {
-	addrOut, err := net.ResolveUnixAddr("unixgram", "/tmp/ccp-in")
+func (s *SocketIpc) SetupListen(loc string, id uint32) ipcbackend.Backend {
+	if s.err != nil {
+		return s
+	}
+
+	var addr *net.UnixAddr
+	var err error
+	var fd string
+	if id != 0 {
+		err = os.MkdirAll(fmt.Sprintf("/tmp/%d", id), 0755)
+		if err != nil {
+			s.err = err
+			return s
+		}
+
+		fd = fmt.Sprintf("/tmp/%d/%s", id, loc)
+		s.openFiles = append(s.openFiles, fmt.Sprintf("/tmp/%d", id))
+	} else {
+		fd = fmt.Sprintf("/tmp/%s", loc)
+		s.openFiles = append(s.openFiles, fd)
+	}
+
+	addr, err = net.ResolveUnixAddr("unixgram", fd)
 	if err != nil {
-		return nil, err
+		s.err = err
+		return s
 	}
 
-	out, err := net.DialUnix("unixgram", nil, addrOut)
+	so, err := net.ListenUnixgram("unixgram", addr)
 	if err != nil {
-		log.Error("dial error")
-		return nil, err
+		s.err = err
+		return s
 	}
 
-	err = os.MkdirAll(fmt.Sprintf("/tmp/%d", sockid), 0755)
-	if err != nil {
-		return nil, err
-	}
-
-	addrIn, err := net.ResolveUnixAddr("unixgram", fmt.Sprintf("/tmp/%d/ccp-out", sockid))
-	if err != nil {
-		return nil, err
-	}
-
-	in, err := net.ListenUnixgram("unixgram", addrIn)
-	if err != nil {
-		log.Error("listen error")
-		return nil, err
-	}
-
-	s := &SocketIpc{
-		in:       in,
-		out:      out,
-		sockid:   sockid,
-		listenCh: make(chan *capnp.Message),
-	}
-
+	s.in = so
+	s.listenCh = make(chan *capnp.Message)
 	go s.listen()
-	return s, nil
+	return s
+}
+
+func (s *SocketIpc) SetupSend(loc string, id uint32) ipcbackend.Backend {
+	if s.err != nil {
+		return s
+	}
+
+	var addr *net.UnixAddr
+	var err error
+	var fd string
+	if id != 0 {
+		fd = fmt.Sprintf("/tmp/%d/%s", id, loc)
+		s.openFiles = append(s.openFiles, fmt.Sprintf("/tmp/%d", id))
+	} else {
+		fd = fmt.Sprintf("/tmp/%s", loc)
+		s.openFiles = append(s.openFiles, fd)
+	}
+
+	addr, err = net.ResolveUnixAddr("unixgram", fd)
+	if err != nil {
+		s.err = err
+		return s
+	}
+
+	out, err := net.DialUnix("unixgram", nil, addr)
+	if err != nil {
+		s.err = err
+		return s
+	}
+
+	s.out = out
+	return s
+}
+
+func (s *SocketIpc) SetupFinish() (ipcbackend.Backend, error) {
+	if s.err != nil {
+		log.WithFields(log.Fields{
+			"err": s.err,
+		}).Error("error setting up IPC")
+		return s, s.err
+	} else {
+		return s, nil
+	}
 }
 
 func (s *SocketIpc) Close() error {
@@ -89,7 +116,10 @@ func (s *SocketIpc) Close() error {
 		s.out.Close()
 	}
 
-	os.RemoveAll(fmt.Sprintf("/tmp/%d", s.sockid))
+	for _, f := range s.openFiles {
+		os.RemoveAll(f)
+	}
+
 	return nil
 }
 
