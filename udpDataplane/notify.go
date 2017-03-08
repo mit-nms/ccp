@@ -6,22 +6,22 @@ import (
 )
 
 func (sock *Sock) setupIpc() error {
-	ipc, err := mmap.Setup()
+	ipcL, err := mmap.Setup()
 	if err != nil {
 		return err
 	}
 
-	sock.ipc = ipc
+	sock.ipc = ipcL
 
 	// start listening for cwnd changes
-	cwndChanges, err := sock.ipc.Listen()
+	cwndChanges, err := sock.ipc.ListenCwndMsg()
 	if err != nil {
 		return err
 	}
 
-	go func(ch chan uint32) {
+	go func(ch chan ipc.CwndMsg) {
 		for cwnd := range ch {
-			sock.cwnd = cwnd
+			sock.cwnd = cwnd.Cwnd
 		}
 	}(cwndChanges)
 
@@ -37,7 +37,7 @@ func (sock *Sock) notifyAcks() {
 }
 
 func writeAckMsg(out ipc.IpcLayer, ack uint32) {
-	err := out.Send(0, ack)
+	err := out.SendAckMsg(0, ack)
 	if err != nil {
 		return
 	}

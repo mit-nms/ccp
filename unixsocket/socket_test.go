@@ -104,7 +104,7 @@ func writer(ready chan interface{}, done chan error) {
 		out: out,
 	}
 
-	err = s.Send(4, 42)
+	err = s.SendAckMsg(4, 42)
 	if err != nil {
 		done <- err
 		return

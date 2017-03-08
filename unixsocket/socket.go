@@ -13,6 +13,8 @@ import (
 type SocketIpc struct {
 	in  *net.UnixConn
 	out *net.UnixConn
+
+	ipc.BaseIpcLayer
 }
 
 func Setup() (ipc.IpcLayer, error) {
@@ -38,10 +40,13 @@ func Setup() (ipc.IpcLayer, error) {
 		return nil, err
 	}
 
-	return &SocketIpc{
+	s := &SocketIpc{
 		in:  in,
 		out: out,
-	}, nil
+	}
+
+	go s.listen()
+	return s, nil
 }
 
 func (s *SocketIpc) Close() error {
@@ -51,8 +56,8 @@ func (s *SocketIpc) Close() error {
 	return nil
 }
 
-func (s *SocketIpc) Send(socketId uint32, ackNo uint32) error {
-	msg, err := ipc.NotifyAckMsg(socketId, ackNo)
+func (s *SocketIpc) SendAckMsg(socketId uint32, ackNo uint32) error {
+	msg, err := ipc.MakeNotifyAckMsg(socketId, ackNo)
 	if err != nil {
 		return err
 	}
@@ -70,13 +75,26 @@ func (s *SocketIpc) Send(socketId uint32, ackNo uint32) error {
 	return nil
 }
 
-func (s *SocketIpc) Listen() (chan uint32, error) {
-	gotMsg := make(chan uint32)
-	go s.listen(gotMsg)
-	return gotMsg, nil
+func (s *SocketIpc) SendCwndMsg(socketId uint32, cwnd uint32) error {
+	msg, err := ipc.MakeCwndMsg(socketId, cwnd)
+	if err != nil {
+		return err
+	}
+
+	buf, err := msg.Marshal()
+	if err != nil {
+		return err
+	}
+
+	_, err = s.out.Write(buf)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
-func (s *SocketIpc) listen(gotMsg chan uint32) {
+func (s *SocketIpc) listen() {
 	dec := capnp.NewDecoder(s.in)
 	for {
 		msg, err := dec.Decode()
@@ -84,11 +102,6 @@ func (s *SocketIpc) listen(gotMsg chan uint32) {
 			continue
 		}
 
-		cwnd, err := ipc.ReadCwndMsg(msg)
-		if err != nil {
-			continue
-		}
-
-		gotMsg <- cwnd
+		s.Parse(msg)
 	}
 }

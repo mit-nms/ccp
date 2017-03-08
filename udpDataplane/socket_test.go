@@ -3,6 +3,7 @@ package udpDataplane
 import (
 	"bytes"
 	"fmt"
+	"os"
 	"testing"
 	"time"
 )
@@ -10,6 +11,9 @@ import (
 func TestBasicTransfer(t *testing.T) {
 	fmt.Println("starting...")
 	testTransfer(t, bytes.Repeat([]byte{'a'}, 100))
+
+	os.Remove("/tmp/ccp-in")
+	os.Remove("/tmp/ccp-out")
 }
 
 func testTransfer(t *testing.T, data []byte) {

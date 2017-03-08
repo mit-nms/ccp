@@ -9,6 +9,8 @@ import (
 type MMapIpc struct {
 	in  MM
 	out MM
+
+	ipc.BaseIpcLayer
 }
 
 func Setup() (ipc.IpcLayer, error) {
@@ -22,7 +24,7 @@ func Setup() (ipc.IpcLayer, error) {
 		return nil, err
 	}
 
-	return MMapIpc{
+	return &MMapIpc{
 		in:  in,
 		out: out,
 	}, nil
@@ -34,8 +36,8 @@ func (m MMapIpc) Close() error {
 	return nil
 }
 
-func (m MMapIpc) Send(socketId uint32, ackNo uint32) error {
-	msg, err := ipc.NotifyAckMsg(socketId, ackNo)
+func (m *MMapIpc) SendAckMsg(socketId uint32, ackNo uint32) error {
+	msg, err := ipc.MakeNotifyAckMsg(socketId, ackNo)
 	if err != nil {
 		return err
 	}
@@ -43,24 +45,16 @@ func (m MMapIpc) Send(socketId uint32, ackNo uint32) error {
 	return m.out.Enc.Encode(msg)
 }
 
-func (m MMapIpc) Listen() (chan uint32, error) {
-	gotMessage := make(chan uint32)
-	go m.pollMmap(gotMessage)
-	return gotMessage, nil
-}
-
-func (m MMapIpc) pollMmap(gotMsg chan uint32) {
+func (m MMapIpc) pollMmap() {
 	for _ = range time.Tick(time.Microsecond) {
-		cwnd, err := m.doDecode()
+		err := m.doDecode()
 		if err != nil {
 			continue
 		}
-
-		gotMsg <- cwnd
 	}
 }
 
-func (m MMapIpc) doDecode() (cwnd uint32, err error) {
+func (m *MMapIpc) doDecode() (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			err = r.(error)
@@ -75,10 +69,9 @@ func (m MMapIpc) doDecode() (cwnd uint32, err error) {
 		return
 	}
 
-	cwnd, err = ipc.ReadCwndMsg(msg)
+	err = m.Parse(msg)
 	if err != nil {
 		m.in.mm.reset()
-		return
 	}
 
 	return
