@@ -5,6 +5,7 @@ import (
 
 	capnpMsg "ccp/capnpMsg"
 
+	log "github.com/Sirupsen/logrus"
 	"zombiezen.com/go/capnproto2"
 )
 
@@ -20,8 +21,8 @@ type CwndMsg struct {
 
 type IpcLayer interface {
 	SendAckMsg(socketId uint32, ackNo uint32) error
-	ListenAckMsg() (chan AckMsg, error)
 	SendCwndMsg(socketId uint32, cwnd uint32) error
+	ListenAckMsg() (chan AckMsg, error)
 	ListenCwndMsg() (chan CwndMsg, error)
 	Close() error
 }
@@ -52,29 +53,25 @@ func (b *BaseIpcLayer) Close() error {
 }
 
 func (b *BaseIpcLayer) Parse(msg *capnp.Message) error {
-	if sid, cwnd, err := ReadCwndMsg(msg); err == nil {
-		msg := CwndMsg{
-			SocketId: sid,
-			Cwnd:     cwnd,
-		}
-
+	if msg, err := ReadCwndMsg(msg); err == nil {
 		select {
 		case b.CwndNotify <- msg:
 		default:
+			log.WithFields(log.Fields{
+				"msg": msg,
+			}).Warn("dropping message")
 		}
 
 		return nil
 	}
 
-	if sid, ack, err := ReadAckMsg(msg); err == nil {
-		msg := AckMsg{
-			SocketId: sid,
-			AckNo:    ack,
-		}
-
+	if msg, err := ReadAckMsg(msg); err == nil {
 		select {
 		case b.AckNotify <- msg:
 		default:
+			log.WithFields(log.Fields{
+				"msg": msg,
+			}).Warn("dropping message")
 		}
 
 		return nil
@@ -90,24 +87,16 @@ func MakeNotifyAckMsg(socketId uint32, ackNo uint32) (*capnp.Message, error) {
 		return nil, err
 	}
 
-	notifyAckMsg, err := capnpMsg.NewRootNotifyAckMsg(seg)
+	notifyAckMsg, err := capnpMsg.NewRootUIntMsg(seg)
 	if err != nil {
 		return nil, err
 	}
 
+	notifyAckMsg.SetType(capnpMsg.UIntMsgType_ack)
 	notifyAckMsg.SetSocketId(socketId)
-	notifyAckMsg.SetAckNo(ackNo)
+	notifyAckMsg.SetVal(ackNo)
 
 	return msg, nil
-}
-
-func ReadAckMsg(msg *capnp.Message) (uint32, uint32, error) {
-	ackMsg, err := capnpMsg.ReadRootNotifyAckMsg(msg)
-	if err != nil {
-		return 0, 0, err
-	}
-
-	return ackMsg.SocketId(), ackMsg.AckNo(), nil
 }
 
 func MakeCwndMsg(socketId uint32, cwnd uint32) (*capnp.Message, error) {
@@ -117,22 +106,40 @@ func MakeCwndMsg(socketId uint32, cwnd uint32) (*capnp.Message, error) {
 		return nil, err
 	}
 
-	cwndMsg, err := capnpMsg.NewRootSetCwndMsg(seg)
+	cwndMsg, err := capnpMsg.NewRootUIntMsg(seg)
 	if err != nil {
 		return nil, err
 	}
 
+	cwndMsg.SetType(capnpMsg.UIntMsgType_cwnd)
 	cwndMsg.SetSocketId(socketId)
-	cwndMsg.SetCwnd(cwnd)
+	cwndMsg.SetVal(cwnd)
 
 	return msg, nil
 }
 
-func ReadCwndMsg(msg *capnp.Message) (uint32, uint32, error) {
-	cwndUpdateMsg, err := capnpMsg.ReadRootSetCwndMsg(msg)
+func ReadAckMsg(msg *capnp.Message) (AckMsg, error) {
+	ackMsg, err := capnpMsg.ReadRootUIntMsg(msg)
 	if err != nil {
-		return 0, 0, err
+		return AckMsg{}, err
 	}
 
-	return cwndUpdateMsg.SocketId(), cwndUpdateMsg.Cwnd(), nil
+	if ackMsg.Type() != capnpMsg.UIntMsgType_ack {
+		return AckMsg{}, fmt.Errorf("Message not of type Ack: %v", ackMsg.Type())
+	}
+
+	return AckMsg{SocketId: ackMsg.SocketId(), AckNo: ackMsg.Val()}, nil
+}
+
+func ReadCwndMsg(msg *capnp.Message) (CwndMsg, error) {
+	cwndUpdateMsg, err := capnpMsg.ReadRootUIntMsg(msg)
+	if err != nil {
+		return CwndMsg{}, err
+	}
+
+	if cwndUpdateMsg.Type() != capnpMsg.UIntMsgType_cwnd {
+		return CwndMsg{}, fmt.Errorf("Message not of type Cwnd: %v", cwndUpdateMsg.Type())
+	}
+
+	return CwndMsg{SocketId: cwndUpdateMsg.SocketId(), Cwnd: cwndUpdateMsg.Val()}, nil
 }

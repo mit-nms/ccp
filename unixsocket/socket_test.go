@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	capnpMsg "ccp/capnpMsg"
+	"ccp/ipc"
 
 	"zombiezen.com/go/capnproto2"
 )
@@ -68,14 +68,14 @@ func reader(ready chan interface{}, done chan error) {
 		return
 	}
 
-	ackMsg, err := capnpMsg.ReadRootNotifyAckMsg(msg)
+	ackMsg, err := ipc.ReadAckMsg(msg)
 	if err != nil {
 		done <- err
 		return
 	}
 
-	if ackMsg.SocketId() != 4 || ackMsg.AckNo() != 42 {
-		done <- fmt.Errorf("wrong message\ngot (%v, %v)\nexpected (%v, %v)", ackMsg.SocketId(), ackMsg.AckNo(), 4, 42)
+	if ackMsg.SocketId != 4 || ackMsg.AckNo != 42 {
+		done <- fmt.Errorf("wrong message\ngot (%v, %v)\nexpected (%v, %v)", ackMsg.SocketId, ackMsg.AckNo, 4, 42)
 		return
 	}
 

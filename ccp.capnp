@@ -3,12 +3,13 @@ using Go = import "/go.capnp";
 $Go.package("capnpMsg");
 $Go.import("ccp/capnpMsg");
 
-struct NotifyAckMsg {
-    socketId @0 :UInt32;
-    ackNo @1 :UInt32;
+enum UIntMsgType {
+    ack @0;
+    cwnd @1;
 }
 
-struct SetCwndMsg {
-    socketId @0 :UInt32;
-    cwnd @1 :UInt32;
+struct UIntMsg {
+    type @0 :UIntMsgType;
+    socketId @1 :UInt32;
+    val @2 :UInt32;
 }

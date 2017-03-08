@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	capnpMsg "ccp/capnpMsg"
+	"ccp/ipc"
 
 	log "github.com/Sirupsen/logrus"
 	"zombiezen.com/go/capnproto2"
@@ -40,18 +40,10 @@ func TestPoll(t *testing.T) {
 }
 
 func waitToWrite(b *bytes.Buffer) error {
-	msg, seg, err := capnp.NewMessage(capnp.SingleSegment(nil))
+	msg, err := ipc.MakeNotifyAckMsg(4, 42)
 	if err != nil {
 		return err
 	}
-
-	foo, err := capnpMsg.NewRootNotifyAckMsg(seg)
-	if err != nil {
-		return err
-	}
-
-	foo.SetSocketId(4)
-	foo.SetAckNo(42)
 
 	dec := capnp.NewEncoder(b)
 	go func() {
@@ -74,29 +66,20 @@ func doDecode(buf *bytes.Buffer) (sockId uint32, ackno uint32, err error) {
 		return
 	}
 
-	ack, err := capnpMsg.ReadRootNotifyAckMsg(msg)
+	ack, err := ipc.ReadAckMsg(msg)
 	if err != nil {
 		return
 	}
 
-	return ack.SocketId(), ack.AckNo(), err
+	return ack.SocketId, ack.AckNo, err
 }
 
 func TestEncodeMsg(t *testing.T) {
-	msg, seg, err := capnp.NewMessage(capnp.SingleSegment(nil))
+	msg, err := ipc.MakeNotifyAckMsg(4, 42)
 	if err != nil {
 		t.Error(err)
 		return
 	}
-
-	foo, err := capnpMsg.NewRootNotifyAckMsg(seg)
-	if err != nil {
-		t.Error(err)
-		return
-	}
-
-	foo.SetSocketId(4)
-	foo.SetAckNo(42)
 
 	buf, err := msg.Marshal()
 	if err != nil {
@@ -110,14 +93,14 @@ func TestEncodeMsg(t *testing.T) {
 		return
 	}
 
-	ackMsg, err := capnpMsg.ReadRootNotifyAckMsg(decMsg)
+	ackMsg, err := ipc.ReadAckMsg(decMsg)
 	if err != nil {
 		t.Error(err)
 		return
 	}
 
-	if ackMsg.SocketId() != 4 || ackMsg.AckNo() != 42 {
-		t.Errorf("wrong message\ngot (%v, %v)\nexpected (%v, %v)", ackMsg.SocketId(), ackMsg.AckNo(), 4, 42)
+	if ackMsg.SocketId != 4 || ackMsg.AckNo != 42 {
+		t.Errorf("wrong message\ngot (%v, %v)\nexpected (%v, %v)", ackMsg.SocketId, ackMsg.AckNo, 4, 42)
 		return
 	}
 }
@@ -176,14 +159,14 @@ func readerProto(ready chan interface{}, wrote chan error, done chan error) {
 		return
 	}
 
-	ackMsg, err := capnpMsg.ReadRootNotifyAckMsg(msg)
+	ackMsg, err := ipc.ReadAckMsg(msg)
 	if err != nil {
 		done <- err
 		return
 	}
 
-	if ackMsg.SocketId() != 4 || ackMsg.AckNo() != 42 {
-		done <- fmt.Errorf("wrong message\ngot (%v, %v)\nexpected (%v, %v)", ackMsg.SocketId(), ackMsg.AckNo(), 4, 42)
+	if ackMsg.SocketId != 4 || ackMsg.AckNo != 42 {
+		done <- fmt.Errorf("wrong message\ngot (%v, %v)\nexpected (%v, %v)", ackMsg.SocketId, ackMsg.AckNo, 4, 42)
 		return
 	}
 
@@ -198,20 +181,11 @@ func writerProto(ready chan interface{}, wrote chan error) {
 		return
 	}
 
-	msg, seg, err := capnp.NewMessage(capnp.SingleSegment(nil))
+	msg, err := ipc.MakeNotifyAckMsg(4, 42)
 	if err != nil {
 		wrote <- err
 		return
 	}
-
-	ackMsg, err := capnpMsg.NewRootNotifyAckMsg(seg)
-	if err != nil {
-		wrote <- err
-		return
-	}
-
-	ackMsg.SetSocketId(4)
-	ackMsg.SetAckNo(42)
 
 	<-ready
 
