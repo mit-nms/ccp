@@ -4,6 +4,7 @@ PACKAGES = ./ipc \
 		   ./udpDataplane \
 		   ./unixsocket \
 		   ./ccpFlow \
+		   ./reno \
 		   ./ccp
 
 all: ccp
