@@ -1,6 +1,7 @@
 package main
 
 import (
+	"ccp/ccpFlow"
 	"ccp/ipc"
 
 	log "github.com/Sirupsen/logrus"
@@ -32,12 +33,18 @@ func handleCreate(cr ipc.CreateMsg) {
 		return
 	}
 
-	flows[cr.SocketId] = getFlow(cr.CongAlg)
+	f, err := ccpFlow.GetFlow(cr.CongAlg)
+	if err != nil {
+		log.WithFields(log.Fields{"alg": cr.CongAlg}).Warn("Unknown flow type, using reno")
+		f, _ = ccpFlow.GetFlow("reno")
+	}
+
+	flows[cr.SocketId] = f
 
 	ipCh, err := ipc.SetupCcpSend(cr.SocketId)
 	if err != nil {
 		log.WithFields(log.Fields{"flowid": cr.SocketId}).Error("Error creating ccp->socket ipc channel for flow")
 	}
 
-	flows[cr.SocketId].Create(ipCh)
+	flows[cr.SocketId].Create(cr.SocketId, ipCh)
 }

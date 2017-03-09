@@ -1,12 +1,13 @@
 package main
 
 import (
+	"ccp/ccpFlow"
 	"ccp/ipc"
 
 	log "github.com/Sirupsen/logrus"
 )
 
-var flows map[uint32]Flow
+var flows map[uint32]ccpFlow.Flow
 
 func main() {
 	com, err := ipc.SetupCcpListen()

@@ -3,6 +3,7 @@ PACKAGES = ./ipc \
 		   ./mmap \
 		   ./udpDataplane \
 		   ./unixsocket \
+		   ./ccpFlow \
 		   ./ccp
 
 all: ccp
