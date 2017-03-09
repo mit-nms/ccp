@@ -24,6 +24,7 @@ func (sock *Sock) rx() {
 func (sock *Sock) doRx(rcvd *Packet) error {
 	_, err := packetops.RecvPacket(sock.conn, rcvd)
 	if err != nil {
+		log.WithFields(log.Fields{"where": "rx"}).Warn(err)
 		return err
 	}
 

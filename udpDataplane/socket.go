@@ -42,6 +42,7 @@ type Sock struct {
 	shouldTx   chan interface{}
 	shouldPass chan interface{}
 	passUp     chan []byte
+	ackedData  chan uint32
 
 	mux sync.Mutex
 }
@@ -77,6 +78,7 @@ func Socket(ip string, port string, name string) (*Sock, error) {
 		shouldTx:        make(chan interface{}, 1),
 		shouldPass:      make(chan interface{}, 1),
 		passUp:          make(chan []byte),
+		ackedData:       make(chan uint32),
 	}
 
 	log.WithFields(log.Fields{
@@ -155,17 +157,15 @@ func makeConn(ip string, port string) (conn *net.UDPConn, err error) {
 }
 
 // currently only supports writing once
-func (sock *Sock) Write(b []byte) error {
+func (sock *Sock) Write(b []byte) (chan uint32, error) {
 	if len(b) > len(sock.writeBuf) {
-		return fmt.Errorf("Write exceeded buffer: %d > %d", len(b), len(sock.writeBuf))
+		return sock.ackedData, fmt.Errorf("Write exceeded buffer: %d > %d", len(b), len(sock.writeBuf))
 	}
 
 	copy(sock.writeBuf, b)
 	sock.writeBufPos = len(b)
-
 	sock.shouldTx <- struct{}{}
-
-	return nil
+	return sock.ackedData, nil
 }
 
 func (sock *Sock) Read(returnGranularity uint32) chan []byte {

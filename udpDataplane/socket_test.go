@@ -71,7 +71,18 @@ func sender(data []byte, done chan error, cleanup chan interface{}) {
 
 	sndSock = sock
 
-	sock.Write(data)
+	sent, err := sock.Write(data)
+	if err != nil {
+		done <- err
+	}
+
+	for a := range sent {
+		if a >= uint32(len(data)) {
+			break
+		}
+	}
+
+	cleanup <- nil
 }
 
 func receiver(expect []byte, done chan error, cleanup chan interface{}) {
@@ -106,6 +117,4 @@ func receiver(expect []byte, done chan error, cleanup chan interface{}) {
 			return
 		}
 	}
-
-	cleanup <- nil
 }
