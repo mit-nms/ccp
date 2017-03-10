@@ -14,7 +14,7 @@ import (
 )
 
 func init() {
-	log.SetLevel(log.InfoLevel)
+	log.SetLevel(log.DebugLevel)
 }
 
 type Sock struct {
@@ -25,24 +25,27 @@ type Sock struct {
 	writeBufPos int
 	readBuf     []byte // TODO make it a ring buffer
 
-	seqNo           uint32
-	cumAck          uint32
-	ackNo           uint32
-	lastAckSent     uint32
-	notifiedAckNo   uint32
-	notifiedDataNo  uint32
-	ackNotifyThresh uint32
-	cwnd            uint32
-	inFlight        uint32
+	// sender
+	cwnd           uint32
+	lastAckedSeqNo uint32
+	dupAckCnt      uint8
+	nextSeqNo      uint32
+	inFlight       window
+
+	// receiver
+	lastAck   uint32
+	rcvWindow window
 
 	// communication with CCP
-	ipc *ipc.Ipc
+	notifiedAckNo   uint32
+	ackNotifyThresh uint32
+	ipc             *ipc.Ipc
 
 	// synchronization
 	shouldTx   chan interface{}
-	shouldPass chan interface{}
-	passUp     chan []byte
+	shouldPass chan uint32
 	ackedData  chan uint32
+	closed     chan interface{}
 
 	mux sync.Mutex
 }
@@ -61,31 +64,45 @@ func Socket(ip string, port string, name string) (*Sock, error) {
 		return nil, err
 	}
 
-	s := &Sock{
-		name:            name,
-		conn:            conn,
-		writeBuf:        make([]byte, 2e6),
-		readBuf:         make([]byte, 2e6),
-		seqNo:           0,
-		cumAck:          0,
-		ackNo:           0,
-		lastAckSent:     0,
-		notifiedAckNo:   0,
-		notifiedDataNo:  0,
-		ackNotifyThresh: PACKET_SIZE * 10, // ~ 10 pkts
-		cwnd:            PACKET_SIZE,      // init_cwnd = ~ 1 pkt
-		inFlight:        0,
-		shouldTx:        make(chan interface{}, 1),
-		shouldPass:      make(chan interface{}, 1),
-		passUp:          make(chan []byte),
-		ackedData:       make(chan uint32),
-	}
-
 	log.WithFields(log.Fields{
 		"ip":   ip,
 		"port": port,
-		"name": s.name,
+		"name": name,
 	}).Info("created socket!")
+
+	return mkSocket(conn, name)
+}
+
+func mkSocket(conn *net.UDPConn, name string) (*Sock, error) {
+	s := &Sock{
+		name: name,
+
+		conn:     conn,
+		writeBuf: make([]byte, 2e6),
+		readBuf:  make([]byte, 2e6),
+
+		//sender
+		cwnd:           5 * PACKET_SIZE, // init_cwnd = ~ 1 pkt
+		lastAckedSeqNo: 0,
+		dupAckCnt:      0,
+		nextSeqNo:      0,
+		inFlight:       makeWindow(),
+
+		//receiver
+		lastAck:   0,
+		rcvWindow: makeWindow(),
+
+		// ccp communication
+		notifiedAckNo:   0,
+		ackNotifyThresh: PACKET_SIZE * 10, // ~ 10 pkts
+		// ipc initialized later
+
+		// synchronization
+		shouldTx:   make(chan interface{}, 1),
+		shouldPass: make(chan uint32, 1),
+		ackedData:  make(chan uint32),
+		closed:     make(chan interface{}),
+	}
 
 	addr := s.conn.LocalAddr().String()
 	spl := strings.Split(addr, ":")
@@ -162,38 +179,67 @@ func (sock *Sock) Write(b []byte) (chan uint32, error) {
 		return sock.ackedData, fmt.Errorf("Write exceeded buffer: %d > %d", len(b), len(sock.writeBuf))
 	}
 
+	if sock.checkClosed() {
+		return nil, fmt.Errorf("closed socket")
+	}
+
+	sock.mux.Lock()
+	defer sock.mux.Unlock()
+
 	copy(sock.writeBuf, b)
 	sock.writeBufPos = len(b)
 	sock.shouldTx <- struct{}{}
 	return sock.ackedData, nil
 }
 
+// receiver
 func (sock *Sock) Read(returnGranularity uint32) chan []byte {
-	sock.passUp = make(chan []byte)
-
+	passUp := make(chan []byte)
 	go func() {
-		for _ = range sock.shouldPass {
-			if sock.ackNo-sock.notifiedDataNo > returnGranularity {
-				sock.passUp <- sock.readBuf[sock.notifiedDataNo:sock.ackNo]
-				sock.notifiedDataNo = sock.ackNo
+		notifiedDataNo := uint32(0)
+		for lastAck := range sock.shouldPass {
+			log.WithFields(log.Fields{
+				"name":           sock.name,
+				"sock.lastAck":   lastAck,
+				"notifiedDataNo": notifiedDataNo,
+			}).Debug("got send on shouldPass")
+
+			if lastAck-notifiedDataNo > returnGranularity {
+				select {
+				case passUp <- sock.readBuf[notifiedDataNo:lastAck]:
+					notifiedDataNo = lastAck
+				default:
+					log.Debug("skipping passUp ch notif")
+				}
 
 				log.WithFields(log.Fields{
 					"name":       sock.name,
-					"ackNo":      sock.ackNo,
-					"notifiedNo": sock.notifiedDataNo,
+					"ackNo":      lastAck,
+					"notifiedNo": notifiedDataNo,
 				}).Info("got data")
 			}
 		}
+
+		close(passUp)
 	}()
 
-	return sock.passUp
+	return passUp
 }
 
 func (sock *Sock) checkClosed() bool {
-	sock.mux.Lock()
-	defer sock.mux.Unlock()
-
 	return sock.conn == nil
+}
+
+func (sock *Sock) Fin() error {
+	pkt := &Packet{
+		SeqNo:   sock.nextSeqNo,
+		AckNo:   sock.lastAck,
+		Flag:    FIN,
+		Length:  0,
+		Payload: []byte{},
+	}
+	packetops.SendPacket(sock.conn, pkt, 0)
+	return sock.Close()
 }
 
 func (sock *Sock) Close() error {
@@ -201,14 +247,17 @@ func (sock *Sock) Close() error {
 		"name": sock.name,
 	}).Info("closing")
 
+	sock.mux.Lock()
+	defer sock.mux.Unlock()
 	err := sock.conn.Close()
 	if err != nil {
-		return err
+		log.WithFields(log.Fields{
+			"name":  sock.name,
+			"where": "closing",
+		}).Warn(err)
 	}
 
-	sock.conn = nil
-	close(sock.passUp)
-
 	sock.ipc.Close()
+	close(sock.closed)
 	return nil
 }

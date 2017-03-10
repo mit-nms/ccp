@@ -25,22 +25,33 @@ func (sock *Sock) setupIpc(sockid uint32) error {
 			sock.mux.Lock()
 			sock.cwnd = cwnd.Cwnd
 			sock.mux.Unlock()
+			sock.shouldTx <- struct{}{}
 		}
 	}(cwndChanges)
 
+	sock.ipc.SendCreateMsg(sockid, "reno")
 	return nil
 }
 
 func (sock *Sock) notifyAcks() {
-	if sock.cumAck-sock.notifiedAckNo > sock.ackNotifyThresh {
+	if sock.lastAckedSeqNo-sock.notifiedAckNo > sock.ackNotifyThresh {
 		// notify control plane of new acks
-		sock.notifiedAckNo = sock.cumAck
+		sock.notifiedAckNo = sock.lastAckedSeqNo
 		go writeAckMsg(sock.name, sock.ipc, sock.notifiedAckNo)
 	}
 
+	if sock.conn == nil {
+		log.WithFields(log.Fields{"ack": sock.lastAckedSeqNo, "name": sock.name}).Debug("closed")
+		return
+	}
+
 	select {
-	case sock.ackedData <- sock.cumAck:
+	case sock.ackedData <- sock.lastAckedSeqNo:
+		log.WithFields(log.Fields{"ack": sock.lastAckedSeqNo, "name": sock.name}).Debug("send ack notification to app")
+	case <-sock.closed:
+		close(sock.ackedData)
 	default:
+		log.WithFields(log.Fields{"ack": sock.lastAckedSeqNo, "name": sock.name}).Debug("not blocking on ack notif")
 	}
 }
 
@@ -51,5 +62,5 @@ func writeAckMsg(name string, out *ipc.Ipc, ack uint32) {
 		return
 	}
 
-	log.WithFields(log.Fields{"ack": ack, "name": name}).Info("send ack notification to ccp")
+	log.WithFields(log.Fields{"ack": ack, "name": name}).Debug("send ack notification to ccp")
 }

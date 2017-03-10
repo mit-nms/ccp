@@ -9,37 +9,54 @@ import (
 )
 
 func (sock *Sock) nextPacket() (*Packet, error) {
-	if sock.seqNo >= uint32(sock.writeBufPos) {
+	seq := sock.inFlight.getNextPkt(sock.nextSeqNo)
+	if seq >= uint32(sock.writeBufPos) {
 		//nothing more to write
 		return nil, fmt.Errorf("nothing more to write")
 	}
 
 	var payl []byte
-	if packetEnd := sock.seqNo + PACKET_SIZE; packetEnd <= uint32(sock.writeBufPos) {
-		payl = sock.writeBuf[sock.seqNo:packetEnd]
+	if packetEnd := seq + PACKET_SIZE; packetEnd <= uint32(sock.writeBufPos) {
+		payl = sock.writeBuf[seq:packetEnd]
 	} else {
-		payl = sock.writeBuf[sock.seqNo:sock.writeBufPos]
+		payl = sock.writeBuf[seq:sock.writeBufPos]
 	}
 
-	return &Packet{
-		SeqNo:   sock.seqNo,
-		AckNo:   sock.ackNo,
+	ackNo, err := sock.rcvWindow.cumAck(sock.lastAck)
+	if err != nil {
+		ackNo = sock.lastAck
+		log.WithFields(log.Fields{"name": sock.name, "side": "rcvWindow", "ackNo": ackNo}).Warn(err)
+	}
+
+	sock.lastAck = ackNo
+
+	pkt := &Packet{
+		SeqNo:   seq,
+		AckNo:   sock.lastAck,
 		Flag:    ACK,
 		Length:  uint16(len(payl)),
 		Payload: payl,
-	}, nil
+	}
+
+	if seq == sock.nextSeqNo {
+		sock.inFlight.addPkt(time.Now(), pkt)
+		sock.nextSeqNo += uint32(pkt.Length)
+	}
+	return pkt, nil
 }
 
 func (sock *Sock) nextAck() (*Packet, error) {
-	if sock.ackNo <= sock.lastAckSent {
-		return nil, fmt.Errorf("already acked")
+	ackNo, err := sock.rcvWindow.cumAck(sock.lastAck)
+	if err != nil {
+		ackNo = sock.lastAck
+		log.WithFields(log.Fields{"name": sock.name, "side": "rcvWindow", "ackNo": ackNo}).Warn(err)
 	}
 
-	sock.lastAckSent = sock.ackNo
+	sock.lastAck = ackNo
 
 	return &Packet{
-		SeqNo:   sock.seqNo,
-		AckNo:   sock.ackNo,
+		SeqNo:   sock.nextSeqNo,
+		AckNo:   sock.lastAck,
 		Flag:    ACK,
 		Length:  0,
 		Payload: []byte{},
@@ -57,13 +74,15 @@ func (sock *Sock) tx() {
 			}).Info("tx")
 		case <-time.After(time.Duration(3) * time.Second):
 			// timeout, assume entire window lost
-			// go back N
-			sock.seqNo = sock.cumAck
-			sock.inFlight = 0
-			log.Info("timeout!")
+			log.WithFields(log.Fields{
+				"name":          sock.name,
+				"sock.inFlight": sock.inFlight.order,
+			}).Info("timeout!")
+			sock.inFlight.timeout()
 		}
 
 		if sock.checkClosed() {
+			log.WithFields(log.Fields{"where": "tx", "name": sock.name}).Debug("closing")
 			return
 		}
 
@@ -72,42 +91,36 @@ func (sock *Sock) tx() {
 }
 
 func (sock *Sock) doTx() {
+	sock.mux.Lock()
+	defer sock.mux.Unlock()
 	sent := false
-	for sock.inFlight < sock.cwnd {
-		sock.mux.Lock()
+	for sock.inFlight.size() < sock.cwnd {
 		pkt, err := sock.nextPacket()
-		sock.mux.Unlock()
-
 		if err != nil {
 			log.WithFields(log.Fields{
 				"name": sock.name,
-			}).Info(err)
+			}).Warn(err)
 			break
 		}
 
 		sent = true
 
 		packetops.SendPacket(sock.conn, pkt, 0)
-		sock.inFlight += uint32(pkt.Length)
-		sock.seqNo += uint32(pkt.Length)
 
 		log.WithFields(log.Fields{
-			"name":     sock.name,
-			"seqNo":    pkt.SeqNo,
-			"ackNo":    pkt.AckNo,
-			"payload":  string(pkt.Payload),
-			"pkt":      pkt,
-			"inFlight": sock.inFlight,
-			"cwnd":     sock.cwnd,
-			"cumAck":   sock.cumAck,
+			"name":          sock.name,
+			"bytesInFlight": sock.inFlight.size(),
+			"seqNo":         pkt.SeqNo,
+			"ackNo":         pkt.AckNo,
+			"length":        pkt.Length,
+			"inFlight":      sock.inFlight.order,
+			"cwnd":          sock.cwnd,
 		}).Info("sent packet")
 	}
 
 	// send an ACK
 	if !sent {
-		sock.mux.Lock()
 		pkt, err := sock.nextAck()
-		sock.mux.Unlock()
 		if err != nil {
 			return
 		}
@@ -117,7 +130,6 @@ func (sock *Sock) doTx() {
 		log.WithFields(log.Fields{
 			"name":  sock.name,
 			"ackNo": pkt.AckNo,
-			"pkt":   pkt,
 		}).Info("sent ack")
 	}
 }
