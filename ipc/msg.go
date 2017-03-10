@@ -41,14 +41,20 @@ func makeCreateMsg(socketId uint32, alg string) (*capnp.Message, error) {
 	return msg, nil
 }
 
-func readCreateMsg(msg *capnp.Message) (CreateMsg, error) {
+func readCreateMsg(msg *capnp.Message) (c CreateMsg, e error) {
+	defer func() {
+		if panic := recover(); panic != nil {
+			e = panic.(error)
+		}
+	}()
+
 	createMsg, err := capnpMsg.ReadRootStrMsg(msg)
 	if err != nil {
 		return CreateMsg{}, err
 	}
 
 	if createMsg.Type() != capnpMsg.MsgType_create {
-		return CreateMsg{}, fmt.Errorf("Message not of type Ack: %v", createMsg.Type())
+		return CreateMsg{}, fmt.Errorf("Message not of type Create: %v", createMsg.Type())
 	}
 
 	alg, err := createMsg.Val()
@@ -78,7 +84,13 @@ func makeNotifyAckMsg(socketId uint32, ackNo uint32) (*capnp.Message, error) {
 	return msg, nil
 }
 
-func readAckMsg(msg *capnp.Message) (AckMsg, error) {
+func readAckMsg(msg *capnp.Message) (a AckMsg, e error) {
+	defer func() {
+		if panic := recover(); panic != nil {
+			e = panic.(error)
+		}
+	}()
+
 	ackMsg, err := capnpMsg.ReadRootUIntMsg(msg)
 	if err != nil {
 		return AckMsg{}, err
@@ -110,7 +122,13 @@ func makeCwndMsg(socketId uint32, cwnd uint32) (*capnp.Message, error) {
 	return msg, nil
 }
 
-func readCwndMsg(msg *capnp.Message) (CwndMsg, error) {
+func readCwndMsg(msg *capnp.Message) (c CwndMsg, e error) {
+	defer func() {
+		if panic := recover(); panic != nil {
+			e = panic.(error)
+		}
+	}()
+
 	cwndUpdateMsg, err := capnpMsg.ReadRootUIntMsg(msg)
 	if err != nil {
 		return CwndMsg{}, err
