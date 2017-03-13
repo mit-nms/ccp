@@ -74,10 +74,8 @@ func (s *SocketIpc) SetupSend(loc string, id uint32) ipcbackend.Backend {
 	var fd string
 	if id != 0 {
 		fd = fmt.Sprintf("/tmp/%d/%s", id, loc)
-		s.openFiles = append(s.openFiles, fmt.Sprintf("/tmp/%d", id))
 	} else {
 		fd = fmt.Sprintf("/tmp/%s", loc)
-		s.openFiles = append(s.openFiles, fd)
 	}
 
 	addr, err = net.ResolveUnixAddr("unixgram", fd)
@@ -110,10 +108,6 @@ func (s *SocketIpc) SetupFinish() (ipcbackend.Backend, error) {
 func (s *SocketIpc) Close() error {
 	if s.in != nil {
 		s.in.Close()
-	}
-
-	if s.out != nil {
-		s.out.Close()
 	}
 
 	for _, f := range s.openFiles {

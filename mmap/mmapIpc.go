@@ -105,7 +105,6 @@ func Setup() (ipcbackend.Backend, error) {
 }
 
 func (m MMapIpc) Close() error {
-	m.in.Close()
 	m.out.Close()
 	os.RemoveAll(fmt.Sprintf("/tmp/%d", m.sockid))
 	return nil
