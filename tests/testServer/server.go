@@ -53,6 +53,6 @@ func main() {
 		log.WithFields(log.Fields{
 			"ack":   a,
 			"total": len(resp),
-		}).Info("acked")
+		}).Info("server acked")
 	}
 }

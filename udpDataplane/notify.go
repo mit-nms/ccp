@@ -1,6 +1,8 @@
 package udpDataplane
 
 import (
+	"time"
+
 	"ccp/ipc"
 
 	log "github.com/Sirupsen/logrus"
@@ -33,32 +35,53 @@ func (sock *Sock) setupIpc(sockid uint32) error {
 	return nil
 }
 
-func (sock *Sock) notifyAcks() {
-	if sock.lastAckedSeqNo-sock.notifiedAckNo > sock.ackNotifyThresh {
-		// notify control plane of new acks
-		sock.notifiedAckNo = sock.lastAckedSeqNo
-		go writeAckMsg(sock.name, sock.ipc, sock.notifiedAckNo)
-	}
+func (sock *Sock) doNotifyAcks() {
+	totAck := uint32(0)
+	notifiedAckNo := uint32(0)
+	timeout := time.NewTimer(time.Second)
+	for {
+		select {
+		case ack := <-sock.notifyAcks:
+			if ack > totAck {
+				totAck = ack
+			}
 
-	if sock.conn == nil {
-		log.WithFields(log.Fields{"ack": sock.lastAckedSeqNo, "name": sock.name}).Debug("closed")
-		return
-	}
+			log.WithFields(log.Fields{
+				"name":          sock.name,
+				"acked":         totAck,
+				"notifiedAckNo": notifiedAckNo,
+			}).Debug("got send on notifyAcks")
 
-	select {
-	case sock.ackedData <- sock.lastAckedSeqNo:
-		log.WithFields(log.Fields{"ack": sock.lastAckedSeqNo, "name": sock.name}).Debug("send ack notification to app")
-	case <-sock.closed:
-		close(sock.ackedData)
-	default:
-		log.WithFields(log.Fields{"ack": sock.lastAckedSeqNo, "name": sock.name}).Debug("not blocking on ack notif")
+			if !timeout.Stop() {
+				<-timeout.C
+			}
+			timeout.Reset(time.Second)
+		case <-timeout.C:
+			timeout.Reset(time.Second)
+		case <-sock.closed:
+			log.WithFields(log.Fields{"where": "doNotifyAcks", "name": sock.name}).Debug("closed, exiting")
+			close(sock.ackedData)
+			return
+		}
+
+		if totAck-notifiedAckNo > sock.ackNotifyThresh {
+			// notify control plane of new acks
+			notifiedAckNo = totAck
+			writeAckMsg(sock.name, sock.ipc, notifiedAckNo)
+		}
+
+		select {
+		case sock.ackedData <- totAck:
+			log.WithFields(log.Fields{"ack": totAck, "name": sock.name}).Debug("send ack notification to app")
+		default:
+		}
 	}
 }
 
 func writeAckMsg(name string, out *ipc.Ipc, ack uint32) {
 	err := out.SendAckMsg(0, ack)
 	if err != nil {
-		log.WithFields(log.Fields{"ack": ack, "name": name}).Warn(err)
+		log.WithFields(log.Fields{"ack": ack, "name": name, "where": "sending ack to ccp"}).Warn(err)
 		return
 	}
 

@@ -72,13 +72,6 @@ func (sock *Sock) doRx(rcvd *Packet) error {
 	sock.handleData(rcvd)
 	sock.mux.Unlock()
 
-	log.WithFields(log.Fields{
-		"sock.name":  sock.name,
-		"pkt.seqNo":  rcvd.SeqNo,
-		"pkt.ackNo":  rcvd.AckNo,
-		"pkt.length": rcvd.Length,
-	}).Info("received packet")
-
 	return nil
 }
 
@@ -95,11 +88,11 @@ func (sock *Sock) handleAck(rcvd *Packet) {
 		if lastAcked == sock.lastAckedSeqNo && sock.nextSeqNo > lastAcked {
 			sock.dupAckCnt++
 			log.WithFields(log.Fields{
-				"name":       sock.name,
-				"lastAcked":  lastAcked,
-				"rcvd.ackno": rcvd.AckNo,
-				"inFlight":   sock.inFlight.order,
-				"dupAcks":    sock.dupAckCnt,
+				"name":           sock.name,
+				"sock.lastAcked": lastAcked,
+				"rcvd.ackno":     rcvd.AckNo,
+				"inFlight":       sock.inFlight.order,
+				"dupAcks":        sock.dupAckCnt,
 			}).Info("dup ack")
 
 			if sock.dupAckCnt >= 3 {
@@ -107,9 +100,9 @@ func (sock *Sock) handleAck(rcvd *Packet) {
 				log.WithFields(log.Fields{
 					"name":           sock.name,
 					"sock.dupAckCnt": sock.dupAckCnt,
-					"sock.lastAcked": sock.lastAckedSeqNo,
+					"sock.lastAcked": lastAcked,
 				}).Info("drop detected")
-				sock.inFlight.drop(sock.lastAckedSeqNo)
+				sock.inFlight.drop(lastAcked)
 				sock.dupAckCnt = 0
 			}
 
@@ -136,7 +129,10 @@ func (sock *Sock) handleAck(rcvd *Packet) {
 			"rtt":        rtt,
 		}).Info("new ack")
 
-		sock.notifyAcks()
+		select {
+		case sock.notifyAcks <- lastAcked:
+		default:
+		}
 	}
 }
 

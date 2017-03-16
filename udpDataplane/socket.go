@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"ccp/ipc"
 
@@ -14,7 +15,7 @@ import (
 )
 
 func init() {
-	log.SetLevel(log.DebugLevel)
+	log.SetLevel(log.InfoLevel)
 }
 
 type Sock struct {
@@ -37,13 +38,13 @@ type Sock struct {
 	rcvWindow window
 
 	// communication with CCP
-	notifiedAckNo   uint32
 	ackNotifyThresh uint32
 	ipc             *ipc.Ipc
 
 	// synchronization
 	shouldTx   chan interface{}
 	shouldPass chan uint32
+	notifyAcks chan uint32
 	ackedData  chan uint32
 	closed     chan interface{}
 
@@ -93,13 +94,13 @@ func mkSocket(conn *net.UDPConn, name string) (*Sock, error) {
 		rcvWindow: makeWindow(),
 
 		// ccp communication
-		notifiedAckNo:   0,
 		ackNotifyThresh: PACKET_SIZE * 10, // ~ 10 pkts
 		// ipc initialized later
 
 		// synchronization
 		shouldTx:   make(chan interface{}, 1),
 		shouldPass: make(chan uint32, 1),
+		notifyAcks: make(chan uint32, 1),
 		ackedData:  make(chan uint32),
 		closed:     make(chan interface{}),
 	}
@@ -126,6 +127,7 @@ func mkSocket(conn *net.UDPConn, name string) (*Sock, error) {
 
 	go s.rx()
 	go s.tx()
+	go s.doNotifyAcks()
 
 	return s, nil
 }
@@ -179,42 +181,63 @@ func (sock *Sock) Write(b []byte) (chan uint32, error) {
 		return sock.ackedData, fmt.Errorf("Write exceeded buffer: %d > %d", len(b), len(sock.writeBuf))
 	}
 
-	if sock.checkClosed() {
-		return nil, fmt.Errorf("closed socket")
-	}
-
 	sock.mux.Lock()
 	defer sock.mux.Unlock()
 
 	copy(sock.writeBuf, b)
 	sock.writeBufPos = len(b)
-	sock.shouldTx <- struct{}{}
+	select {
+	case sock.shouldTx <- struct{}{}:
+	case <-sock.closed:
+		return nil, fmt.Errorf("socket closed")
+	}
 	return sock.ackedData, nil
 }
 
 // receiver
 func (sock *Sock) Read(returnGranularity uint32) chan []byte {
-	passUp := make(chan []byte)
+	passUp := make(chan []byte, 1)
 	go func() {
+		totAck := uint32(0)
 		notifiedDataNo := uint32(0)
-		for lastAck := range sock.shouldPass {
-			log.WithFields(log.Fields{
-				"name":           sock.name,
-				"sock.lastAck":   lastAck,
-				"notifiedDataNo": notifiedDataNo,
-			}).Debug("got send on shouldPass")
+		timeout := time.NewTimer(time.Second)
+	loop:
+		for {
+			select {
+			case lastAck, ok := <-sock.shouldPass:
+				if !ok {
+					break loop
+				}
 
-			if lastAck-notifiedDataNo > returnGranularity {
+				log.WithFields(log.Fields{
+					"name":           sock.name,
+					"acked":          totAck,
+					"notifiedDataNo": notifiedDataNo,
+				}).Debug("got send on shouldPass")
+
+				if lastAck > totAck {
+					totAck = lastAck
+				}
+
+				if !timeout.Stop() {
+					<-timeout.C
+				}
+				timeout.Reset(time.Second)
+			case <-timeout.C:
+				timeout.Reset(time.Second)
+			}
+
+			if totAck-notifiedDataNo > returnGranularity {
 				select {
-				case passUp <- sock.readBuf[notifiedDataNo:lastAck]:
-					notifiedDataNo = lastAck
+				case passUp <- sock.readBuf[notifiedDataNo:totAck]:
+					notifiedDataNo = totAck
+					log.Debug("notified application of rcvd data")
 				default:
-					log.Debug("skipping passUp ch notif")
 				}
 
 				log.WithFields(log.Fields{
 					"name":       sock.name,
-					"ackNo":      lastAck,
+					"ackNo":      totAck,
 					"notifiedNo": notifiedDataNo,
 				}).Info("got data")
 			}
@@ -224,10 +247,6 @@ func (sock *Sock) Read(returnGranularity uint32) chan []byte {
 	}()
 
 	return passUp
-}
-
-func (sock *Sock) checkClosed() bool {
-	return sock.conn == nil
 }
 
 func (sock *Sock) Fin() error {
@@ -247,8 +266,7 @@ func (sock *Sock) Close() error {
 		"name": sock.name,
 	}).Info("closing")
 
-	sock.mux.Lock()
-	defer sock.mux.Unlock()
+	close(sock.closed)
 	err := sock.conn.Close()
 	if err != nil {
 		log.WithFields(log.Fields{
@@ -258,6 +276,5 @@ func (sock *Sock) Close() error {
 	}
 
 	sock.ipc.Close()
-	close(sock.closed)
 	return nil
 }

@@ -81,24 +81,33 @@ func dummyCcp(ccp *ipc.Ipc) {
 
 func testTransfer(t *testing.T, port string, data []byte, smallcwnd bool) {
 	done := make(chan error)
-	cleanup := make(chan interface{})
+	cleanup := make(chan *Sock)
+	exit := make(chan interface{})
 	fmt.Println("starting receiver...")
-	go receiver(port, data, done, cleanup, smallcwnd)
+	go receiver(port, data, done, cleanup, exit)
 	<-time.After(time.Duration(100) * time.Millisecond)
 	fmt.Println("starting sender...")
-	go sender(port, data, done, cleanup, smallcwnd)
+	go sender(port, data, done, cleanup, exit, smallcwnd)
 
 	err := <-done
 	if err != nil {
 		t.Error(err)
 	}
-	cleanup <- nil
+
+	s1 := <-cleanup
+	s1.Close()
+	fmt.Printf("closed %s\n", s1.name)
+	s2 := <-cleanup
+	s2.Close()
 }
 
-func sender(port string, data []byte, done chan error, cleanup chan interface{}, smallcwnd bool) {
+func sender(port string, data []byte, done chan error, cleanup chan *Sock, exit chan interface{}, smallcwnd bool) {
 	sock, err := Socket("127.0.0.1", port, "SENDER")
 	if err != nil {
-		done <- err
+		select {
+		case done <- err:
+		default:
+		}
 		return
 	}
 
@@ -110,60 +119,90 @@ func sender(port string, data []byte, done chan error, cleanup chan interface{},
 
 	sent, err := sock.Write(data)
 	if err != nil {
-		done <- err
-	}
-
-	for a := range sent {
-		log.WithFields(log.Fields{"acked": a, "tot": len(data)}).Debug("data acked")
-		if a >= uint32(len(data)) {
-			log.WithFields(log.Fields{"acked": a, "tot": len(data)}).Debug("stopping")
-			done <- nil
-			break
+		select {
+		case done <- err:
+		default:
 		}
 	}
 
-	<-cleanup
-	sock.Close()
+loop:
+	for {
+		select {
+		case a := <-sent:
+			log.WithFields(log.Fields{"acked": a, "tot": len(data)}).Debug("data acked")
+			if a >= uint32(len(data)) {
+				log.WithFields(log.Fields{"acked": a, "tot": len(data)}).Debug("stopping")
+				select {
+				case done <- nil:
+				default:
+				}
+				break loop
+			}
+		case <-exit:
+			break loop
+		case <-time.After(3 * time.Second):
+			select {
+			case done <- fmt.Errorf("test timeout"):
+			default:
+				break loop
+			}
+		}
+	}
+
+	cleanup <- sock
 }
 
-func receiver(port string, expect []byte, done chan error, cleanup chan interface{}, smallcwnd bool) {
+func receiver(port string, expect []byte, done chan error, cleanup chan *Sock, exit chan interface{}) {
 	sock, err := Socket("", port, "RCVR")
 	if err != nil {
 		done <- err
 		return
 	}
 
-	sock.mux.Lock()
-	if smallcwnd {
-		sock.cwnd = 1 * PACKET_SIZE
-	} else {
-		sock.cwnd = 5 * PACKET_SIZE
-	}
-	sock.mux.Unlock()
-
-	rcvd := sock.Read(10)
 	var b bytes.Buffer
-	start := time.Now()
-	for r := range rcvd {
-		b.Write(r)
-		fmt.Printf("%v: got %d/%d\n", time.Since(start), b.Len(), len(expect))
-		if b.Len() >= len(expect) || time.Since(start) > time.Duration(5)*time.Second {
-			break
-		}
-	}
-
 	buf := b.Bytes()
-	if len(buf) != len(expect) {
-		done <- fmt.Errorf("received data doesn't match length: \n%v\n%v", buf, expect)
-	}
-
-	for i := 0; i < len(buf); i++ {
-		if buf[i] != expect[i] {
-			done <- fmt.Errorf("received data doesn't match: \n%v\n%v", buf, expect)
-			break
+	rcvd := sock.Read(10)
+	start := time.Now()
+loop:
+	for {
+		select {
+		case r := <-rcvd:
+			b.Write(r)
+			log.WithFields(log.Fields{
+				"time": time.Since(start),
+				"got":  b.Len(),
+				"tot":  len(expect),
+			}).Info("app receiver")
+			if b.Len() >= len(expect) || time.Since(start) > time.Duration(5)*time.Second {
+				log.WithFields(log.Fields{
+					"time": time.Since(start),
+					"got":  b.Len(),
+					"tot":  len(expect),
+				}).Info("app receiver stopping")
+				break loop
+			}
+		case <-exit:
+			break loop
+		case <-time.After(3 * time.Second):
+			break loop
 		}
 	}
 
-	<-cleanup
-	sock.Close()
+	err = nil
+	if b.Len() != len(expect) {
+		err = fmt.Errorf("received data doesn't match length: \n%v\n%v", len(buf), len(expect))
+		goto cl
+	}
+
+	if !bytes.Equal(b.Bytes(), expect) {
+		err = fmt.Errorf("received data doesn't match: \n%v\n%v", len(buf), len(expect))
+	}
+
+cl:
+	select {
+	case done <- err:
+	default:
+	}
+
+	cleanup <- sock
 }

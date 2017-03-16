@@ -44,7 +44,7 @@ func (w *window) addPkt(t time.Time, p *Packet) {
 			"pkt":   p,
 			"pkts":  w.pkts,
 			"order": w.order,
-		}).Info("re-add packet")
+		}).Debug("re-add packet")
 
 		e.t = t
 		return
@@ -89,7 +89,7 @@ func (w *window) rcvdPkt(
 				"wnd": w.order,
 				"ack": seqNo,
 				"rtt": rtt,
-			}).Info("rcvd pkt fn")
+			}).Debug("rcvd pkt fn")
 			delete(w.pkts, seq)
 			continue
 		}
@@ -175,7 +175,7 @@ func (w *window) cumAck(start uint32) (uint32, error) {
 		"wnd":   w.order,
 		"ack":   cumAck,
 		"start": start,
-	}).Info("cumAck fn")
+	}).Debug("cumAck fn")
 
 	if len(w.order) != len(w.pkts) {
 		log.WithFields(log.Fields{

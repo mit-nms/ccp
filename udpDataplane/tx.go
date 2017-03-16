@@ -66,12 +66,15 @@ func (sock *Sock) nextAck() (*Packet, error) {
 func (sock *Sock) tx() {
 	for {
 		select {
+		case <-sock.closed:
+			log.WithFields(log.Fields{"where": "tx", "name": sock.name}).Debug("closed, exiting")
+			return
 		case <-sock.shouldTx:
 			// got new ack
 			// or got new data and want to send ack
 			log.WithFields(log.Fields{
 				"name": sock.name,
-			}).Info("tx")
+			}).Debug("tx")
 		case <-time.After(time.Duration(3) * time.Second):
 			// timeout, assume entire window lost
 			log.WithFields(log.Fields{
@@ -79,11 +82,6 @@ func (sock *Sock) tx() {
 				"sock.inFlight": sock.inFlight.order,
 			}).Info("timeout!")
 			sock.inFlight.timeout()
-		}
-
-		if sock.checkClosed() {
-			log.WithFields(log.Fields{"where": "tx", "name": sock.name}).Debug("closing")
-			return
 		}
 
 		sock.doTx()
