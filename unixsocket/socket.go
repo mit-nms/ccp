@@ -17,6 +17,7 @@ type SocketIpc struct {
 	openFiles []string
 	listenCh  chan *capnp.Message
 	err       error
+	killed    chan interface{}
 }
 
 func New() ipcbackend.Backend {
@@ -50,6 +51,7 @@ func (s *SocketIpc) SetupListen(loc string, id uint32) ipcbackend.Backend {
 	}
 
 	s.in = so
+	s.killed = make(chan interface{})
 	s.listenCh = make(chan *capnp.Message)
 	go s.listen()
 	return s
@@ -97,6 +99,9 @@ func (s *SocketIpc) Close() error {
 		os.RemoveAll(f)
 	}
 
+	close(s.killed)
+	close(s.listenCh)
+
 	return nil
 }
 
@@ -119,10 +124,32 @@ func (s *SocketIpc) ListenMsg() (chan *capnp.Message, error) {
 }
 
 func (s *SocketIpc) listen() {
-	dec := capnp.NewDecoder(s.in)
+	buf := make([]byte, 1024)
 	for {
-		msg, err := dec.Decode()
+		select {
+		case _, ok := <-s.killed:
+			if !ok {
+				log.WithFields(log.Fields{
+					"where": "socketIpc.listenMsg.checkKilled",
+				}).Info("killed, closing")
+				return
+			}
+		default:
+		}
+
+		n, err := s.in.Read(buf)
 		if err != nil {
+			log.WithFields(log.Fields{
+				"where": "socketIpc.listenMsg.read",
+			}).Warn(err)
+			continue
+		}
+
+		msg, err := capnp.Unmarshal(buf[:n])
+		if err != nil {
+			log.WithFields(log.Fields{
+				"where": "socketIpc.listenMsg.unmarshal",
+			}).Warn(err)
 			continue
 		}
 

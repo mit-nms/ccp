@@ -97,8 +97,18 @@ func testTransfer(t *testing.T, port string, data []byte, smallcwnd bool) {
 	s1 := <-cleanup
 	s1.Close()
 	fmt.Printf("closed %s\n", s1.name)
-	s2 := <-cleanup
-	s2.Close()
+	for {
+		select {
+		case s2 := <-cleanup:
+			s2.Close()
+			return
+		default:
+			select {
+			case exit <- struct{}{}:
+			default:
+			}
+		}
+	}
 }
 
 func sender(port string, data []byte, done chan error, cleanup chan *Sock, exit chan interface{}, smallcwnd bool) {
