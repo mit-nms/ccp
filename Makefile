@@ -1,6 +1,5 @@
 PACKAGES = ./ipc \
 		   ./ipcBackend \
-		   ./mmap \
 		   ./udpDataplane \
 		   ./unixsocket \
 		   ./ccpFlow \
