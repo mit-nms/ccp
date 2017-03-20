@@ -25,11 +25,11 @@ type MM struct {
 }
 
 // mmap maps the given file into memory.
-func Mmap(file string) (MM, error) {
+func Mmap(file string) (*MM, error) {
 	c, err := os.OpenFile(file, os.O_CREATE|os.O_TRUNC|os.O_RDWR, 0666)
 	if err != nil {
 		log.Errorf("err creating file %s: %v", file, err)
-		return MM{}, err
+		return nil, err
 	}
 	_, err = c.Seek(1023, 0)
 	if err != nil {
@@ -44,25 +44,25 @@ func Mmap(file string) (MM, error) {
 	f, err := os.OpenFile(file, os.O_RDWR, 0666)
 	if err != nil {
 		log.Errorf("err opening file %s: %v", file, err)
-		return MM{}, err
+		return nil, err
 	}
 
 	mm, err := MmapFile(f)
 	if err != nil {
 		log.Errorf("err mmap'ing file %s: %v", file, err)
-		return MM{}, err
+		return nil, err
 	}
 
 	return mm, nil
 }
 
-func MmapFile(file *os.File) (MM, error) {
+func MmapFile(file *os.File) (*MM, error) {
 	mbuf, err := mmap(file)
 	if err != nil {
-		return MM{}, err
+		return nil, err
 	}
 
-	return MM{
+	return &MM{
 		Enc: capnp.NewEncoder(mbuf),
 		Dec: capnp.NewDecoder(mbuf),
 		f:   file,

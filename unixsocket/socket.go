@@ -1,7 +1,6 @@
 package unixsocket
 
 import (
-	"fmt"
 	"net"
 	"os"
 
@@ -30,21 +29,13 @@ func (s *SocketIpc) SetupListen(loc string, id uint32) ipcbackend.Backend {
 	}
 
 	var addr *net.UnixAddr
-	var err error
-	var fd string
-	if id != 0 {
-		err = os.MkdirAll(fmt.Sprintf("/tmp/%d", id), 0755)
-		if err != nil {
-			s.err = err
-			return s
-		}
-
-		fd = fmt.Sprintf("/tmp/%d/%s", id, loc)
-		s.openFiles = append(s.openFiles, fmt.Sprintf("/tmp/%d", id))
-	} else {
-		fd = fmt.Sprintf("/tmp/%s", loc)
-		s.openFiles = append(s.openFiles, fd)
+	fd, newOpen, err := ipcbackend.AddressForListen(loc, id)
+	if err != nil {
+		s.err = err
+		return s
 	}
+
+	s.openFiles = append(s.openFiles, newOpen)
 
 	addr, err = net.ResolveUnixAddr("unixgram", fd)
 	if err != nil {
@@ -69,16 +60,8 @@ func (s *SocketIpc) SetupSend(loc string, id uint32) ipcbackend.Backend {
 		return s
 	}
 
-	var addr *net.UnixAddr
-	var err error
-	var fd string
-	if id != 0 {
-		fd = fmt.Sprintf("/tmp/%d/%s", id, loc)
-	} else {
-		fd = fmt.Sprintf("/tmp/%s", loc)
-	}
-
-	addr, err = net.ResolveUnixAddr("unixgram", fd)
+	fd := ipcbackend.AddressForSend(loc, id)
+	addr, err := net.ResolveUnixAddr("unixgram", fd)
 	if err != nil {
 		s.err = err
 		return s

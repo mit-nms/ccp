@@ -7,6 +7,10 @@ import (
 	log "github.com/Sirupsen/logrus"
 )
 
+func init() {
+	log.SetLevel(log.InfoLevel)
+}
+
 var flows map[uint32]ccpFlow.Flow
 
 func main() {

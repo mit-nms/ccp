@@ -12,16 +12,17 @@ import (
 )
 
 type MMapIpc struct {
-	in  MM
-	out MM
+	in  *MM
+	out *MM
 
-	sockid   uint32
-	listenCh chan *capnp.Message
-	err      error
+	sockid    uint32
+	openFiles []string
+	listenCh  chan *capnp.Message
+	err       error
 }
 
 func New() ipcbackend.Backend {
-	return &MMapIpc{}
+	return &MMapIpc{openFiles: make([]string, 0)}
 }
 
 func (m *MMapIpc) SetupListen(loc string, id uint32) ipcbackend.Backend {
@@ -29,20 +30,14 @@ func (m *MMapIpc) SetupListen(loc string, id uint32) ipcbackend.Backend {
 		return m
 	}
 
-	var mm MM
-	var err error
-	if id != 0 {
-		err = os.MkdirAll(fmt.Sprintf("/tmp/%d", id), 0755)
-		if err != nil {
-			m.err = err
-			return m
-		}
-
-		mm, err = Mmap(fmt.Sprintf("/tmp/%d/%s", id, loc))
-	} else {
-		mm, err = Mmap(fmt.Sprintf("/tmp/%s", loc))
+	fd, newOpen, err := ipcbackend.AddressForListen(loc, id)
+	if err != nil {
+		m.err = err
+		return m
 	}
 
+	m.openFiles = append(m.openFiles, newOpen)
+	mm, err := Mmap(fd)
 	if err != nil {
 		m.err = err
 		return m
@@ -59,18 +54,11 @@ func (m *MMapIpc) SetupSend(loc string, id uint32) ipcbackend.Backend {
 		return m
 	}
 
-	var mm MM
-	var err error
-	if id != 0 {
-		err = os.MkdirAll(fmt.Sprintf("/tmp/%d", id), 0755)
-		if err != nil {
-			m.err = err
-			return m
-		}
-
-		mm, err = Mmap(fmt.Sprintf("/tmp/%d/%s", id, loc))
-	} else {
-		mm, err = Mmap(fmt.Sprintf("/tmp/%s", loc))
+	fd := ipcbackend.AddressForSend(loc, id)
+	mm, err := Mmap(fd)
+	if err != nil {
+		m.err = err
+		return m
 	}
 
 	m.out = mm
@@ -86,27 +74,14 @@ func (m *MMapIpc) SetupFinish() (ipcbackend.Backend, error) {
 	}
 }
 
-func Setup() (ipcbackend.Backend, error) {
-	in, err := Mmap("/tmp/ccp-in")
-	if err != nil {
-		return nil, err
+func (m *MMapIpc) Close() error {
+	if m.in != nil {
+		m.in.Close()
 	}
 
-	out, err := Mmap("/tmp/ccp-out")
-	if err != nil {
-		return nil, err
+	for _, f := range m.openFiles {
+		os.RemoveAll(f)
 	}
-
-	return &MMapIpc{
-		in:       in,
-		out:      out,
-		listenCh: make(chan *capnp.Message),
-	}, nil
-}
-
-func (m MMapIpc) Close() error {
-	m.out.Close()
-	os.RemoveAll(fmt.Sprintf("/tmp/%d", m.sockid))
 	return nil
 }
 
