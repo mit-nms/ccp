@@ -93,7 +93,7 @@ func (sock *Sock) handleAck(rcvd *Packet) {
 				"rcvd.ackno":     rcvd.AckNo,
 				"inFlight":       sock.inFlight.order,
 				"dupAcks":        sock.dupAckCnt,
-			}).Info("dup ack")
+			}).Debug("dup ack")
 
 			if sock.dupAckCnt >= 3 {
 				// dupAckCnt >= 3 -> packet drop
@@ -101,7 +101,7 @@ func (sock *Sock) handleAck(rcvd *Packet) {
 					"name":           sock.name,
 					"sock.dupAckCnt": sock.dupAckCnt,
 					"sock.lastAcked": lastAcked,
-				}).Info("drop detected")
+				}).Debug("drop detected")
 				sock.inFlight.drop(lastAcked)
 				sock.dupAckCnt = 0
 			}
@@ -127,7 +127,7 @@ func (sock *Sock) handleAck(rcvd *Packet) {
 			"rcvd.ackno": rcvd.AckNo,
 			"inFlight":   sock.inFlight.order,
 			"rtt":        rtt,
-		}).Info("new ack")
+		}).Debug("new ack")
 
 		select {
 		case sock.notifyAcks <- lastAcked:
@@ -158,7 +158,7 @@ func (sock *Sock) handleData(rcvd *Packet) {
 			"rcvd.seqno":   rcvd.SeqNo,
 			"rcvd.length":  rcvd.Length,
 			"sock.lastAck": sock.lastAck,
-		}).Info("new data")
+		}).Debug("new data")
 
 		copy(sock.readBuf[rcvd.SeqNo:], rcvd.Payload[:rcvd.Length])
 		select {

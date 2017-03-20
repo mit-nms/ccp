@@ -50,7 +50,7 @@ func (sock *Sock) doNotifyAcks() {
 				"name":          sock.name,
 				"acked":         totAck,
 				"notifiedAckNo": notifiedAckNo,
-			}).Debug("got send on notifyAcks")
+			}).Info("got send on notifyAcks")
 
 			if !timeout.Stop() {
 				<-timeout.C
@@ -72,7 +72,7 @@ func (sock *Sock) doNotifyAcks() {
 
 		select {
 		case sock.ackedData <- totAck:
-			log.WithFields(log.Fields{"ack": totAck, "name": sock.name}).Debug("send ack notification to app")
+			log.WithFields(log.Fields{"ack": totAck, "name": sock.name}).Info("send ack notification to app")
 		default:
 		}
 	}
@@ -85,5 +85,5 @@ func writeAckMsg(name string, out *ipc.Ipc, ack uint32) {
 		return
 	}
 
-	log.WithFields(log.Fields{"ack": ack, "name": name}).Debug("send ack notification to ccp")
+	log.WithFields(log.Fields{"ack": ack, "name": name}).Info("send ack notification to ccp")
 }

@@ -19,6 +19,10 @@ func handleMsgs(ackCh chan ipc.AckMsg, createCh chan ipc.CreateMsg) {
 }
 
 func handleAck(ack ipc.AckMsg) {
+	log.WithFields(log.Fields{
+		"flowid": ack.SocketId,
+		"ackno":  ack.AckNo,
+	}).Info("handleAck")
 	if flow, ok := flows[ack.SocketId]; !ok {
 		log.WithFields(log.Fields{"flowid": ack.SocketId}).Warn("Unknown flow")
 		return
@@ -28,6 +32,10 @@ func handleAck(ack ipc.AckMsg) {
 }
 
 func handleCreate(cr ipc.CreateMsg) {
+	log.WithFields(log.Fields{
+		"flowid": cr.SocketId,
+		"alg":    cr.CongAlg,
+	}).Info("handleCreate")
 	if _, ok := flows[cr.SocketId]; ok {
 		log.WithFields(log.Fields{"flowid": cr.SocketId}).Error("Creating already created flow")
 		return

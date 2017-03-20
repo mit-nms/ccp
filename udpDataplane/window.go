@@ -40,12 +40,6 @@ func insertIndex(list []uint32, it uint32) int {
 // both sides
 func (w *window) addPkt(t time.Time, p *Packet) {
 	if e, ok := w.pkts[p.SeqNo]; ok {
-		log.WithFields(log.Fields{
-			"pkt":   p,
-			"pkts":  w.pkts,
-			"order": w.order,
-		}).Debug("re-add packet")
-
 		e.t = t
 		return
 	}
@@ -85,11 +79,6 @@ func (w *window) rcvdPkt(
 		if seq < p.AckNo {
 			rtt = t.Sub(w.pkts[seq].t)
 			seqNo = seq + uint32(w.pkts[seq].p.Length)
-			log.WithFields(log.Fields{
-				"wnd": w.order,
-				"ack": seqNo,
-				"rtt": rtt,
-			}).Debug("rcvd pkt fn")
 			delete(w.pkts, seq)
 			continue
 		}
@@ -170,12 +159,6 @@ func (w *window) cumAck(start uint32) (uint32, error) {
 		delete(w.pkts, cumAck)
 		cumAck += nextCumAck
 	}
-
-	log.WithFields(log.Fields{
-		"wnd":   w.order,
-		"ack":   cumAck,
-		"start": start,
-	}).Debug("cumAck fn")
 
 	if len(w.order) != len(w.pkts) {
 		log.WithFields(log.Fields{

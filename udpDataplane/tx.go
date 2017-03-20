@@ -80,7 +80,7 @@ func (sock *Sock) tx() {
 			log.WithFields(log.Fields{
 				"name":          sock.name,
 				"sock.inFlight": sock.inFlight.order,
-			}).Info("timeout!")
+			}).Debug("timeout!")
 			sock.inFlight.timeout()
 		}
 
@@ -113,7 +113,7 @@ func (sock *Sock) doTx() {
 			"length":        pkt.Length,
 			"inFlight":      sock.inFlight.order,
 			"cwnd":          sock.cwnd,
-		}).Info("sent packet")
+		}).Debug("sent packet")
 	}
 
 	// send an ACK
@@ -128,6 +128,6 @@ func (sock *Sock) doTx() {
 		log.WithFields(log.Fields{
 			"name":  sock.name,
 			"ackNo": pkt.AckNo,
-		}).Info("sent ack")
+		}).Debug("sent ack")
 	}
 }
