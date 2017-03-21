@@ -3,6 +3,7 @@ package main
 import (
 	"ccp/ccpFlow"
 	"ccp/ipc"
+	"ccp/reno"
 
 	log "github.com/Sirupsen/logrus"
 )
@@ -14,6 +15,9 @@ func init() {
 var flows map[uint32]ccpFlow.Flow
 
 func main() {
+	flows = make(map[uint32]ccpFlow.Flow)
+	reno.Init()
+
 	com, err := ipc.SetupCcpListen()
 	if err != nil {
 		log.Error(err)

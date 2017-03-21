@@ -91,17 +91,7 @@ func (s *SocketIpc) SetupFinish() (ipcbackend.Backend, error) {
 }
 
 func (s *SocketIpc) Close() error {
-	if s.in != nil {
-		s.in.Close()
-	}
-
-	for _, f := range s.openFiles {
-		os.RemoveAll(f)
-	}
-
 	close(s.killed)
-	close(s.listenCh)
-
 	return nil
 }
 
@@ -129,6 +119,16 @@ func (s *SocketIpc) listen() {
 		select {
 		case _, ok := <-s.killed:
 			if !ok {
+				if s.in != nil {
+					s.in.Close()
+				}
+
+				for _, f := range s.openFiles {
+					os.RemoveAll(f)
+				}
+
+				close(s.listenCh)
+
 				log.WithFields(log.Fields{
 					"where": "socketIpc.listenMsg.checkKilled",
 				}).Info("killed, closing")

@@ -25,7 +25,7 @@ func (sock *Sock) nextPacket() (*Packet, error) {
 	ackNo, err := sock.rcvWindow.cumAck(sock.lastAck)
 	if err != nil {
 		ackNo = sock.lastAck
-		log.WithFields(log.Fields{"name": sock.name, "side": "rcvWindow", "ackNo": ackNo}).Warn(err)
+		log.WithFields(log.Fields{"name": sock.name, "side": "rcvWindow", "ackNo": ackNo}).Debug(err)
 	}
 
 	sock.lastAck = ackNo
@@ -49,7 +49,7 @@ func (sock *Sock) nextAck() (*Packet, error) {
 	ackNo, err := sock.rcvWindow.cumAck(sock.lastAck)
 	if err != nil {
 		ackNo = sock.lastAck
-		log.WithFields(log.Fields{"name": sock.name, "side": "rcvWindow", "ackNo": ackNo}).Warn(err)
+		log.WithFields(log.Fields{"name": sock.name, "side": "rcvWindow", "ackNo": ackNo}).Debug(err)
 	}
 
 	sock.lastAck = ackNo
@@ -97,7 +97,7 @@ func (sock *Sock) doTx() {
 		if err != nil {
 			log.WithFields(log.Fields{
 				"name": sock.name,
-			}).Warn(err)
+			}).Debug(err)
 			break
 		}
 

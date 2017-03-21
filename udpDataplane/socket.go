@@ -20,6 +20,7 @@ func init() {
 
 type Sock struct {
 	name string
+	port uint32
 
 	conn        *net.UDPConn // the underlying connection
 	writeBuf    []byte       // TODO make it a ring buffer
@@ -117,7 +118,8 @@ func mkSocket(conn *net.UDPConn, name string) (*Sock, error) {
 		lport = 42424
 	}
 
-	err = s.setupIpc(uint32(lport))
+	s.port = uint32(lport)
+	err = s.setupIpc()
 	if err != nil {
 		log.WithFields(log.Fields{
 			"name": s.name,

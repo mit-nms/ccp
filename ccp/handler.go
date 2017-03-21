@@ -44,15 +44,20 @@ func handleCreate(cr ipc.CreateMsg) {
 	f, err := ccpFlow.GetFlow(cr.CongAlg)
 	if err != nil {
 		log.WithFields(log.Fields{"alg": cr.CongAlg}).Warn("Unknown flow type, using reno")
-		f, _ = ccpFlow.GetFlow("reno")
+		f, err = ccpFlow.GetFlow("reno")
+		if err != nil {
+			log.WithFields(log.Fields{
+				"registered": ccpFlow.ListRegistered(),
+				"asked":      "reno",
+			}).Panic(err)
+		}
 	}
-
-	flows[cr.SocketId] = f
 
 	ipCh, err := ipc.SetupCcpSend(cr.SocketId)
 	if err != nil {
 		log.WithFields(log.Fields{"flowid": cr.SocketId}).Error("Error creating ccp->socket ipc channel for flow")
 	}
 
-	flows[cr.SocketId].Create(cr.SocketId, ipCh)
+	f.Create(cr.SocketId, ipCh)
+	flows[cr.SocketId] = f
 }
