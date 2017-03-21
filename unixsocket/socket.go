@@ -114,7 +114,8 @@ func (s *SocketIpc) ListenMsg() (chan *capnp.Message, error) {
 }
 
 func (s *SocketIpc) listen() {
-	buf := make([]byte, 1024)
+	buf := make([]byte, 2048)
+	writePos := 0
 	for {
 		select {
 		case _, ok := <-s.killed:
@@ -137,7 +138,8 @@ func (s *SocketIpc) listen() {
 		default:
 		}
 
-		n, err := s.in.Read(buf)
+		ring := append(buf[writePos:], buf[:writePos]...)
+		n, err := s.in.Read(ring)
 		if err != nil {
 			log.WithFields(log.Fields{
 				"where": "socketIpc.listenMsg.read",
@@ -145,7 +147,8 @@ func (s *SocketIpc) listen() {
 			continue
 		}
 
-		msg, err := capnp.Unmarshal(buf[:n])
+		writePos = (writePos + n) % len(buf)
+		msg, err := capnp.Unmarshal(ring[:n])
 		if err != nil {
 			log.WithFields(log.Fields{
 				"where": "socketIpc.listenMsg.unmarshal",

@@ -183,9 +183,6 @@ func (sock *Sock) Write(b []byte) (chan uint32, error) {
 		return sock.ackedData, fmt.Errorf("Write exceeded buffer: %d > %d", len(b), len(sock.writeBuf))
 	}
 
-	sock.mux.Lock()
-	defer sock.mux.Unlock()
-
 	copy(sock.writeBuf, b)
 	sock.writeBufPos = len(b)
 	select {
