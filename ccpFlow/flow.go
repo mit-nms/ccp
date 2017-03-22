@@ -6,14 +6,20 @@ import (
 	"ccp/ipc"
 )
 
+type DropEvent string
+
+var Isolated DropEvent = DropEvent("isolated")
+var Complete DropEvent = DropEvent("complete")
+
 type Flow interface {
 	Name() string
 	Create(sockid uint32, send ipc.SendOnly)
 	Ack(ack uint32)
+	Drop(event DropEvent)
 }
 
 // name of flow to function which returns blank instance
-var flowRegistry map[string]func() Flow
+var flowRegistry map[string]func() Flow // TODO call it protocol registry
 
 // Register a new type of flow
 // name: unique name of the flow type

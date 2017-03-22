@@ -33,25 +33,44 @@ func (r *Reno) Create(socketid uint32, send ipc.SendOnly) {
 
 func (r *Reno) Ack(ack uint32) {
 	newBytesAcked := float32(ack - r.lastAck)
+	// increase cwnd by 1 / cwnd per packet
+	r.cwnd += pktSize * (newBytesAcked / r.cwnd)
+	// notify increased cwnd
+	r.notifyCwnd()
 
 	log.WithFields(log.Fields{
 		"gotAck":      ack,
 		"currCwnd":    r.cwnd,
 		"currLastAck": r.lastAck,
 		"newlyAcked":  newBytesAcked,
-	}).Info("got ack notif")
-
-	// increase cwnd by 1 / cwnd per packet
-	r.cwnd += newBytesAcked * (newBytesAcked / r.cwnd)
-	// notify increased cwnd
-	r.notifyCwnd()
+	}).Info("[reno] got ack")
 
 	r.lastAck = ack
+	return
+}
+
+func (r *Reno) Drop(ev ccpFlow.DropEvent) {
+	switch ev {
+	case ccpFlow.Isolated:
+		r.cwnd /= 2
+		if r.cwnd < initCwnd {
+			r.cwnd = initCwnd
+		}
+	case ccpFlow.Complete:
+		r.cwnd = initCwnd
+	default:
+		log.WithFields(log.Fields{
+			"event": ev,
+		}).Warn("[reno] unknown drop event type")
+		return
+	}
 
 	log.WithFields(log.Fields{
 		"currCwnd": r.cwnd,
-	}).Info("updated")
-	return
+		"event":    ev,
+	}).Info("[reno] drop")
+
+	r.notifyCwnd()
 }
 
 func (r *Reno) notifyCwnd() {
@@ -59,11 +78,9 @@ func (r *Reno) notifyCwnd() {
 	if err != nil {
 		log.WithFields(log.Fields{"cwnd": r.cwnd, "name": r.sockid}).Warn(err)
 	}
-	log.WithFields(log.Fields{"cwnd": r.cwnd, "name": r.sockid}).Info("update cwnd")
 }
 
 func Init() {
-	log.Info("registering reno")
 	ccpFlow.Register("reno", func() ccpFlow.Flow {
 		return &Reno{}
 	})

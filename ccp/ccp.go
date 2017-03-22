@@ -36,5 +36,11 @@ func main() {
 		return
 	}
 
-	handleMsgs(ackCh, createCh)
+	dropCh, err := com.ListenDropMsg()
+	if err != nil {
+		log.Error(err)
+		return
+	}
+
+	handleMsgs(ackCh, createCh, dropCh)
 }

@@ -77,11 +77,23 @@ func (sock *Sock) tx() {
 			}).Debug("tx")
 		case <-time.After(time.Duration(3) * time.Second):
 			// timeout, assume entire window lost
-			log.WithFields(log.Fields{
-				"name":          sock.name,
-				"sock.inFlight": sock.inFlight.order,
-			}).Debug("timeout!")
-			sock.inFlight.timeout()
+			if len(sock.inFlight.order) > 0 {
+				log.WithFields(log.Fields{
+					"name":          sock.name,
+					"sock.inFlight": sock.inFlight.order,
+				}).Debug("timeout!")
+				firstUnacked, err := sock.inFlight.start()
+				if err != nil {
+					break
+				}
+
+				sock.dupAckCnt = 0
+				sock.inFlight.timeout()
+				select {
+				case sock.notifyDrops <- notifyDrop{ev: "timeout", lastAck: firstUnacked}:
+				default:
+				}
+			}
 		}
 
 		sock.doTx()

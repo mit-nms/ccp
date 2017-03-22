@@ -3,6 +3,7 @@ package udpDataplane
 import (
 	"time"
 
+	"ccp/ccpFlow"
 	"ccp/ipc"
 
 	log "github.com/Sirupsen/logrus"
@@ -34,60 +35,103 @@ func (sock *Sock) setupIpc() error {
 			sock.shouldTx <- struct{}{}
 		}
 	}(cwndChanges)
+	go sock.doNotify()
 
 	sock.ipc.SendCreateMsg(sock.port, "reno")
 	return nil
 }
 
-func (sock *Sock) doNotifyAcks() {
+type notifyAck struct {
+	ack uint32
+	rtt time.Duration
+}
+
+type notifyDrop struct {
+	lastAck uint32
+	ev      string
+}
+
+func (sock *Sock) doNotify() {
 	totAck := uint32(0)
 	notifiedAckNo := uint32(0)
+	droppedPktNo := uint32(0)
 	timeout := time.NewTimer(time.Second)
 	for {
 		select {
-		case ack := <-sock.notifyAcks:
-			if ack > totAck {
-				totAck = ack
+		case notifAck := <-sock.notifyAcks:
+			if notifAck.ack > totAck {
+				totAck = notifAck.ack
 			}
 
 			log.WithFields(log.Fields{
 				"name":          sock.name,
 				"acked":         totAck,
 				"notifiedAckNo": notifiedAckNo,
-			}).Info("got send on notifyAcks")
+			}).Info("notifyAcks")
 
-			if !timeout.Stop() {
-				<-timeout.C
+			if totAck-notifiedAckNo > sock.ackNotifyThresh {
+				// notify control plane of new acks
+				notifiedAckNo = totAck
+				writeAckMsg(sock.name, sock.port, sock.ipc, notifiedAckNo, notifAck.rtt)
 			}
-			timeout.Reset(time.Second)
+
+			select {
+			case sock.ackedData <- totAck:
+			default:
+			}
+		case dropEv := <-sock.notifyDrops:
+			if dropEv.lastAck >= droppedPktNo {
+				log.WithFields(log.Fields{
+					"name":  sock.name,
+					"event": dropEv,
+				}).Info("notifyDrops")
+				writeDropMsg(sock.name, sock.port, sock.ipc, dropEv.ev)
+				droppedPktNo = dropEv.lastAck
+			}
 		case <-timeout.C:
 			timeout.Reset(time.Second)
 		case <-sock.closed:
-			log.WithFields(log.Fields{"where": "doNotifyAcks", "name": sock.name}).Debug("closed, exiting")
+			log.WithFields(log.Fields{"where": "doNotify", "name": sock.name}).Debug("closed, exiting")
 			close(sock.ackedData)
 			return
 		}
-
-		if totAck-notifiedAckNo > sock.ackNotifyThresh {
-			// notify control plane of new acks
-			notifiedAckNo = totAck
-			writeAckMsg(sock.name, sock.port, sock.ipc, notifiedAckNo)
+		if !timeout.Stop() {
+			<-timeout.C
 		}
-
-		select {
-		case sock.ackedData <- totAck:
-			log.WithFields(log.Fields{"ack": totAck, "name": sock.name}).Info("send ack notification to app")
-		default:
-		}
+		timeout.Reset(time.Second)
 	}
 }
 
-func writeAckMsg(name string, id uint32, out *ipc.Ipc, ack uint32) {
-	err := out.SendAckMsg(id, ack)
+func writeAckMsg(
+	name string,
+	id uint32,
+	out *ipc.Ipc,
+	ack uint32,
+	rtt time.Duration,
+) {
+	err := out.SendAckMsg(id, ack, rtt)
 	if err != nil {
-		log.WithFields(log.Fields{"ack": ack, "name": name, "id": id, "where": "sending ack to ccp"}).Warn(err)
+		log.WithFields(log.Fields{"ack": ack, "name": name, "id": id, "where": "notify.writeAckMsg"}).Warn(err)
 		return
 	}
+}
 
-	log.WithFields(log.Fields{"ack": ack, "name": name, "id": id}).Info("send ack notification to ccp")
+func writeDropMsg(name string, id uint32, out *ipc.Ipc, event string) {
+	switch event {
+	case "timeout":
+		event = string(ccpFlow.Complete)
+	case "3xdupack":
+		event = string(ccpFlow.Isolated)
+	default:
+		log.WithFields(log.Fields{
+			"event": event,
+			"id":    id,
+			"name":  name,
+		}).Panic("unknown event")
+	}
+	err := out.SendDropMsg(id, event)
+	if err != nil {
+		log.WithFields(log.Fields{"event": event, "name": name, "id": id, "where": "notify.writeDropMsg"}).Warn(err)
+		return
+	}
 }

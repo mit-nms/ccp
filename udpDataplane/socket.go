@@ -43,11 +43,12 @@ type Sock struct {
 	ipc             *ipc.Ipc
 
 	// synchronization
-	shouldTx   chan interface{}
-	shouldPass chan uint32
-	notifyAcks chan uint32
-	ackedData  chan uint32
-	closed     chan interface{}
+	shouldTx    chan interface{}
+	shouldPass  chan uint32
+	notifyAcks  chan notifyAck
+	notifyDrops chan notifyDrop
+	ackedData   chan uint32
+	closed      chan interface{}
 
 	mux sync.Mutex
 }
@@ -99,11 +100,12 @@ func mkSocket(conn *net.UDPConn, name string) (*Sock, error) {
 		// ipc initialized later
 
 		// synchronization
-		shouldTx:   make(chan interface{}, 1),
-		shouldPass: make(chan uint32, 1),
-		notifyAcks: make(chan uint32, 1),
-		ackedData:  make(chan uint32),
-		closed:     make(chan interface{}),
+		shouldTx:    make(chan interface{}, 1),
+		shouldPass:  make(chan uint32, 1),
+		notifyAcks:  make(chan notifyAck, 1),
+		notifyDrops: make(chan notifyDrop, 1),
+		ackedData:   make(chan uint32),
+		closed:      make(chan interface{}),
 	}
 
 	addr := s.conn.LocalAddr().String()
@@ -129,7 +131,6 @@ func mkSocket(conn *net.UDPConn, name string) (*Sock, error) {
 
 	go s.rx()
 	go s.tx()
-	go s.doNotifyAcks()
 
 	return s, nil
 }
@@ -233,12 +234,6 @@ func (sock *Sock) Read(returnGranularity uint32) chan []byte {
 					log.Debug("notified application of rcvd data")
 				default:
 				}
-
-				log.WithFields(log.Fields{
-					"name":       sock.name,
-					"ackNo":      totAck,
-					"notifiedNo": notifiedDataNo,
-				}).Info("got data")
 			}
 		}
 

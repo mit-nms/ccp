@@ -20,6 +20,10 @@ func (t *TestFlow) Ack(ack uint32) {
 	return
 }
 
+func (t *TestFlow) Drop(ev DropEvent) {
+	return
+}
+
 func TestRegister(t *testing.T) {
 	err := Register("mock", func() Flow { return &TestFlow{} })
 	if err != nil {

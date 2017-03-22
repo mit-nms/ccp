@@ -1,6 +1,7 @@
 package ipc
 
 import (
+	"bytes"
 	"fmt"
 	"testing"
 	"time"
@@ -9,7 +10,7 @@ import (
 )
 
 func TestEncodeAckMsg(t *testing.T) {
-	msg, err := makeNotifyAckMsg(4, 42)
+	msg, err := makeNotifyAckMsg(4, 42, time.Duration(time.Millisecond))
 	if err != nil {
 		t.Error(err)
 		return
@@ -95,7 +96,7 @@ func TestBadEncodeCreateMsg(t *testing.T) {
 		return
 	}
 
-	msg, err = makeNotifyAckMsg(6, 8)
+	msg, err = makeNotifyAckMsg(6, 8, time.Duration(time.Millisecond))
 	if err != nil {
 		t.Error(err)
 		return
@@ -151,23 +152,55 @@ func TestEncodeCreateMsg(t *testing.T) {
 	}
 }
 
-func TestParse(t *testing.T) {
-	i := Ipc{
-		CreateNotify: make(chan CreateMsg),
-		AckNotify:    make(chan AckMsg),
-		CwndNotify:   make(chan CwndMsg),
-	}
-
-	msgs := make(chan *capnp.Message)
-	go i.parse(msgs)
-
-	ackMsg, err := makeNotifyAckMsg(4, 568)
+func TestEncodeDropMsg(t *testing.T) {
+	msg, err := makeDropMsg(7, "isolated")
 	if err != nil {
 		t.Error(err)
 		return
 	}
 
+	buf, err := msg.Marshal()
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	decMsg, err := capnp.Unmarshal(buf)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	ackMsg, err := readDropMsg(decMsg)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	if ackMsg.SocketId != 7 || ackMsg.Event != "isolated" {
+		t.Errorf("wrong message\ngot (%v, %v)\nexpected (%v, %v)", ackMsg.SocketId, ackMsg.Event, 7, "isolated")
+		return
+	}
+}
+
+func TestParse(t *testing.T) {
+	i := Ipc{
+		CreateNotify: make(chan CreateMsg),
+		AckNotify:    make(chan AckMsg),
+		CwndNotify:   make(chan CwndMsg),
+		DropNotify:   make(chan DropMsg),
+	}
+
+	msgs := make(chan *capnp.Message)
+	go i.parse(msgs)
+
 	cwndMsg, err := makeCwndMsg(3, 573)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	ackMsg, err := makeNotifyAckMsg(4, 568, time.Duration(time.Millisecond))
 	if err != nil {
 		t.Error(err)
 		return
@@ -179,22 +212,35 @@ func TestParse(t *testing.T) {
 		return
 	}
 
+	dropMsg, err := makeDropMsg(6, "isolated")
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
 	done := make(chan error)
 	go expectAck(i, 4, 568, done)
 	go expectCwnd(i, 3, 573, done)
 	go expectCreate(i, 5, "reno", done)
+	go expectDrop(i, 6, "isolated", done)
 
 	<-time.After(time.Millisecond)
 
 	msgs <- ackMsg
 	msgs <- cwndMsg
 	msgs <- createMsg
+	msgs <- dropMsg
 
-	for i := 0; i < 3; i++ {
-		err = <-done
-		if err != nil {
-			t.Error(err)
-			return
+	for i := 0; i < 4; i++ {
+		t.Log(i)
+		select {
+		case err = <-done:
+			if err != nil {
+				t.Error(err)
+				return
+			}
+		case <-time.After(time.Second):
+			t.Error("test timed out")
 		}
 	}
 }
@@ -244,6 +290,23 @@ func expectCreate(b Ipc, sid uint32, alg string, done chan error) {
 			alg,
 			m.SocketId,
 			m.CongAlg,
+		)
+	} else {
+		done <- nil
+	}
+}
+
+func expectDrop(b Ipc, sid uint32, ev string, done chan error) {
+	ms, _ := b.ListenDropMsg()
+
+	m := <-ms
+	if m.SocketId != sid || !bytes.Equal([]byte(m.Event), []byte(ev)) {
+		done <- fmt.Errorf(
+			"incorrect value in create message read\nexpected (%d, %s)\ngot (%d, %s)",
+			sid,
+			ev,
+			m.SocketId,
+			m.Event,
 		)
 	} else {
 		done <- nil

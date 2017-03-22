@@ -80,7 +80,7 @@ func (sock *Sock) doRx(rcvd *Packet) error {
 func (sock *Sock) handleAck(rcvd *Packet) {
 	firstUnacked, err := sock.inFlight.start()
 	if err != nil {
-		firstUnacked = 0
+		return
 	}
 
 	if rcvd.AckNo >= firstUnacked {
@@ -90,6 +90,7 @@ func (sock *Sock) handleAck(rcvd *Packet) {
 			log.WithFields(log.Fields{
 				"name":           sock.name,
 				"sock.lastAcked": lastAcked,
+				"firstUnacked":   firstUnacked,
 				"rcvd.ackno":     rcvd.AckNo,
 				"inFlight":       sock.inFlight.order,
 				"dupAcks":        sock.dupAckCnt,
@@ -103,7 +104,10 @@ func (sock *Sock) handleAck(rcvd *Packet) {
 					"sock.lastAcked": lastAcked,
 				}).Debug("drop detected")
 				sock.inFlight.drop(lastAcked)
-				sock.dupAckCnt = 0
+				select {
+				case sock.notifyDrops <- notifyDrop{ev: "3xdupack", lastAck: lastAcked}:
+				default:
+				}
 			}
 
 			select {
@@ -130,7 +134,7 @@ func (sock *Sock) handleAck(rcvd *Packet) {
 		}).Debug("new ack")
 
 		select {
-		case sock.notifyAcks <- lastAcked:
+		case sock.notifyAcks <- notifyAck{ack: lastAcked, rtt: rtt}:
 		default:
 		}
 	}

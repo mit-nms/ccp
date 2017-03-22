@@ -1,6 +1,8 @@
 package ipc
 
 import (
+	"time"
+
 	"ccp/ipcBackend"
 	"ccp/unixsocket"
 
@@ -11,6 +13,7 @@ type Ipc struct {
 	CreateNotify chan CreateMsg
 	AckNotify    chan AckMsg
 	CwndNotify   chan CwndMsg
+	DropNotify   chan DropMsg
 
 	backend ipcbackend.Backend
 }
@@ -52,6 +55,7 @@ func SetupWithBackend(back ipcbackend.Backend) (*Ipc, error) {
 		CreateNotify: make(chan CreateMsg),
 		AckNotify:    make(chan AckMsg),
 		CwndNotify:   make(chan CwndMsg),
+		DropNotify:   make(chan DropMsg),
 		backend:      back,
 	}
 
@@ -73,8 +77,17 @@ func (i *Ipc) SendCreateMsg(socketId uint32, alg string) error {
 	return i.backend.SendMsg(msg)
 }
 
-func (i *Ipc) SendAckMsg(socketId uint32, ackNo uint32) error {
-	msg, err := makeNotifyAckMsg(socketId, ackNo)
+func (i *Ipc) SendDropMsg(socketId uint32, ev string) error {
+	msg, err := makeDropMsg(socketId, ev)
+	if err != nil {
+		return err
+	}
+
+	return i.backend.SendMsg(msg)
+}
+
+func (i *Ipc) SendAckMsg(socketId uint32, ackNo uint32, rtt time.Duration) error {
+	msg, err := makeNotifyAckMsg(socketId, ackNo, rtt)
 	if err != nil {
 		return err
 	}
@@ -95,6 +108,10 @@ func (i *Ipc) ListenCreateMsg() (chan CreateMsg, error) {
 	return i.CreateNotify, nil
 }
 
+func (i *Ipc) ListenDropMsg() (chan DropMsg, error) {
+	return i.DropNotify, nil
+}
+
 func (i *Ipc) ListenAckMsg() (chan AckMsg, error) {
 	return i.AckNotify, nil
 }
@@ -109,18 +126,35 @@ func (i *Ipc) Close() error {
 
 func (i *Ipc) parse(msgs chan *capnp.Message) {
 	for msg := range msgs {
-		if crMsg, err := readCreateMsg(msg); err == nil {
-			i.CreateNotify <- crMsg
-			continue
-		}
-
 		if akMsg, err := readAckMsg(msg); err == nil {
-			i.AckNotify <- akMsg
+			select {
+			case i.AckNotify <- akMsg:
+			default:
+			}
 			continue
 		}
 
 		if cwMsg, err := readCwndMsg(msg); err == nil {
-			i.CwndNotify <- cwMsg
+			select {
+			case i.CwndNotify <- cwMsg:
+			default:
+			}
+			continue
+		}
+
+		if drMsg, err := readDropMsg(msg); err == nil {
+			select {
+			case i.DropNotify <- drMsg:
+			default:
+			}
+			continue
+		}
+
+		if crMsg, err := readCreateMsg(msg); err == nil {
+			select {
+			case i.CreateNotify <- crMsg:
+			default:
+			}
 			continue
 		}
 	}

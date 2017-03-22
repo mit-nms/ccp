@@ -41,7 +41,7 @@ func writer(b ipcbackend.Backend, done chan error) {
 	}
 
 	log.Info("writing")
-	err = s.SendAckMsg(4, 42)
+	err = s.SendAckMsg(4, 42, time.Duration(time.Millisecond))
 	if err != nil {
 		done <- err
 		return

@@ -41,6 +41,7 @@ func insertIndex(list []uint32, it uint32) int {
 func (w *window) addPkt(t time.Time, p *Packet) {
 	if e, ok := w.pkts[p.SeqNo]; ok {
 		e.t = t
+		w.pkts[p.SeqNo] = e
 		return
 	}
 

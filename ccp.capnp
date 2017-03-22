@@ -7,6 +7,7 @@ enum MsgType {
     ack @0;
     cwnd @1;
     create @2;
+    drop @3;
 }
 
 struct UIntMsg {
@@ -19,4 +20,11 @@ struct StrMsg {
     type @0 :MsgType;
     socketId @1 :UInt32;
     val @2 :Text;
+}
+
+struct UInt32UInt64Msg {
+    type @0 :MsgType;
+    socketId @1 :UInt32;
+    numInt32 @2 :UInt32;
+    numInt64 @3 :UInt64;
 }

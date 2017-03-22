@@ -7,13 +7,19 @@ import (
 	log "github.com/Sirupsen/logrus"
 )
 
-func handleMsgs(ackCh chan ipc.AckMsg, createCh chan ipc.CreateMsg) {
+func handleMsgs(
+	ackCh chan ipc.AckMsg,
+	createCh chan ipc.CreateMsg,
+	dropCh chan ipc.DropMsg,
+) {
 	for {
 		select {
 		case ack := <-ackCh:
 			handleAck(ack)
 		case cr := <-createCh:
 			handleCreate(cr)
+		case dr := <-dropCh:
+			handleDrop(dr)
 		}
 	}
 }
@@ -22,12 +28,28 @@ func handleAck(ack ipc.AckMsg) {
 	log.WithFields(log.Fields{
 		"flowid": ack.SocketId,
 		"ackno":  ack.AckNo,
+		"rtt":    ack.Rtt,
 	}).Info("handleAck")
+
 	if flow, ok := flows[ack.SocketId]; !ok {
 		log.WithFields(log.Fields{"flowid": ack.SocketId}).Warn("Unknown flow")
 		return
 	} else {
 		flow.Ack(ack.AckNo)
+	}
+}
+
+func handleDrop(dr ipc.DropMsg) {
+	log.WithFields(log.Fields{
+		"flowid":  dr.SocketId,
+		"drEvent": dr.Event,
+	}).Info("handleDrop")
+
+	if flow, ok := flows[dr.SocketId]; !ok {
+		log.WithFields(log.Fields{"flowid": dr.SocketId}).Warn("Unknown flow")
+		return
+	} else {
+		flow.Drop(ccpFlow.DropEvent(dr.Event))
 	}
 }
 
