@@ -32,11 +32,11 @@ type Sock struct {
 	lastAckedSeqNo uint32
 	dupAckCnt      uint8
 	nextSeqNo      uint32
-	inFlight       window
+	inFlight       *window
 
 	// receiver
 	lastAck   uint32
-	rcvWindow window
+	rcvWindow *window
 
 	// communication with CCP
 	ackNotifyThresh uint32

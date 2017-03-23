@@ -112,7 +112,7 @@ func TestRcvdPacket(t *testing.T) {
 		return
 	}
 
-	cumAcked, _ := w.rcvdPkt(time.Now(), &Packet{
+	cumAcked, _, err := w.rcvdPkt(time.Now(), &Packet{
 		SeqNo:   0,
 		AckNo:   3,
 		Flag:    ACK,

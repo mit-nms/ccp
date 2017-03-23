@@ -84,7 +84,18 @@ func (sock *Sock) handleAck(rcvd *Packet) {
 	}
 
 	if rcvd.AckNo >= firstUnacked {
-		lastAcked, rtt := sock.inFlight.rcvdPkt(time.Now(), rcvd)
+		lastAcked, rtt, err := sock.inFlight.rcvdPkt(time.Now(), rcvd)
+		if err != nil {
+			// there were no packets in flight
+			// so we got an ack to a packet we didn't send
+			log.WithFields(log.Fields{
+				"name":         sock.name,
+				"firstUnacked": firstUnacked,
+				"rcvd.ackno":   rcvd.AckNo,
+				"inFlight":     sock.inFlight.order,
+			}).Panic("unknown packet")
+		}
+
 		if lastAcked == sock.lastAckedSeqNo && sock.nextSeqNo > lastAcked {
 			sock.dupAckCnt++
 			log.WithFields(log.Fields{
@@ -162,7 +173,7 @@ func (sock *Sock) handleData(rcvd *Packet) {
 			"rcvd.seqno":   rcvd.SeqNo,
 			"rcvd.length":  rcvd.Length,
 			"sock.lastAck": sock.lastAck,
-		}).Debug("new data")
+		}).Info("new data")
 
 		copy(sock.readBuf[rcvd.SeqNo:], rcvd.Payload[:rcvd.Length])
 		select {

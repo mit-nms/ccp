@@ -9,6 +9,9 @@ import (
 )
 
 func (sock *Sock) nextPacket() (*Packet, error) {
+	sock.mux.Lock()
+	defer sock.mux.Unlock()
+
 	seq := sock.inFlight.getNextPkt(sock.nextSeqNo)
 	if seq >= uint32(sock.writeBufPos) {
 		//nothing more to write
@@ -46,6 +49,9 @@ func (sock *Sock) nextPacket() (*Packet, error) {
 }
 
 func (sock *Sock) nextAck() (*Packet, error) {
+	sock.mux.Lock()
+	defer sock.mux.Unlock()
+
 	ackNo, err := sock.rcvWindow.cumAck(sock.lastAck)
 	if err != nil {
 		ackNo = sock.lastAck
@@ -101,8 +107,6 @@ func (sock *Sock) tx() {
 }
 
 func (sock *Sock) doTx() {
-	sock.mux.Lock()
-	defer sock.mux.Unlock()
 	sent := false
 	for sock.inFlight.size() < sock.cwnd {
 		pkt, err := sock.nextPacket()

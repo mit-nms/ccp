@@ -80,7 +80,7 @@ func (sock *Sock) doNotify() {
 			default:
 			}
 		case dropEv := <-sock.notifyDrops:
-			if dropEv.lastAck >= droppedPktNo {
+			if dropEv.lastAck > droppedPktNo {
 				log.WithFields(log.Fields{
 					"name":  sock.name,
 					"event": dropEv,

@@ -2,6 +2,7 @@ package udpDataplane
 
 import (
 	"fmt"
+	"sync"
 	"time"
 
 	log "github.com/Sirupsen/logrus"
@@ -14,12 +15,13 @@ type windowEntry struct {
 }
 
 type window struct {
+	mux   sync.RWMutex
 	pkts  map[uint32]windowEntry
 	order []uint32
 }
 
-func makeWindow() window {
-	return window{
+func makeWindow() *window {
+	return &window{
 		pkts:  make(map[uint32]windowEntry),
 		order: make([]uint32, 0),
 	}
@@ -39,6 +41,9 @@ func insertIndex(list []uint32, it uint32) int {
 
 // both sides
 func (w *window) addPkt(t time.Time, p *Packet) {
+	w.mux.Lock()
+	defer w.mux.Unlock()
+
 	if e, ok := w.pkts[p.SeqNo]; ok {
 		e.t = t
 		w.pkts[p.SeqNo] = e
@@ -72,8 +77,15 @@ func (w *window) addPkt(t time.Time, p *Packet) {
 func (w *window) rcvdPkt(
 	t time.Time,
 	p *Packet,
-) (seqNo uint32, rtt time.Duration) {
-	seqNo, _ = w.start()
+) (seqNo uint32, rtt time.Duration, err error) {
+	seqNo, err = w.start()
+	if err != nil {
+		return
+	}
+
+	w.mux.Lock()
+	defer w.mux.Unlock()
+
 	ind := 0
 	for i, seq := range w.order {
 		ind = i + 1
@@ -100,6 +112,9 @@ func (w *window) rcvdPkt(
 }
 
 func (w *window) timeout() {
+	w.mux.Lock()
+	defer w.mux.Unlock()
+
 	for i, e := range w.pkts {
 		e.active = false
 		w.pkts[i] = e
@@ -107,6 +122,9 @@ func (w *window) timeout() {
 }
 
 func (w *window) drop(seq uint32) {
+	w.mux.Lock()
+	defer w.mux.Unlock()
+
 	if ent, ok := w.pkts[seq]; ok {
 		ent.active = false
 		w.pkts[seq] = ent
@@ -114,6 +132,9 @@ func (w *window) drop(seq uint32) {
 }
 
 func (w *window) getNextPkt(newPacket uint32) (seq uint32) {
+	w.mux.Lock()
+	defer w.mux.Unlock()
+
 	for _, s := range w.order {
 		e, _ := w.pkts[s]
 		if !e.active {
@@ -128,6 +149,9 @@ func (w *window) getNextPkt(newPacket uint32) (seq uint32) {
 
 // window size in bytes
 func (w *window) size() uint32 {
+	w.mux.RLock()
+	defer w.mux.RUnlock()
+
 	sz := uint32(0)
 	for _, e := range w.pkts {
 		if e.active {
@@ -139,6 +163,9 @@ func (w *window) size() uint32 {
 }
 
 func (w *window) start() (uint32, error) {
+	w.mux.RLock()
+	defer w.mux.RUnlock()
+
 	if len(w.order) == 0 {
 		return 0, fmt.Errorf("empty window")
 	}
@@ -149,6 +176,9 @@ func (w *window) start() (uint32, error) {
 // receiver side
 // what cumulative ack to send
 func (w *window) cumAck(start uint32) (uint32, error) {
+	w.mux.Lock()
+	defer w.mux.Unlock()
+
 	if len(w.order) == 0 {
 		return 0, fmt.Errorf("empty window")
 	}
