@@ -38,6 +38,7 @@ func (sock *Sock) nextPacket() (*Packet, error) {
 		AckNo:   sock.lastAck,
 		Flag:    ACK,
 		Length:  uint16(len(payl)),
+		Sack:    sock.rcvWindow.getSack(sock.lastAck),
 		Payload: payl,
 	}
 
@@ -65,6 +66,7 @@ func (sock *Sock) nextAck() (*Packet, error) {
 		AckNo:   sock.lastAck,
 		Flag:    ACK,
 		Length:  0,
+		Sack:    sock.rcvWindow.getSack(sock.lastAck),
 		Payload: []byte{},
 	}, nil
 }

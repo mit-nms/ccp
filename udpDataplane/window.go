@@ -72,6 +72,20 @@ func (w *window) addPkt(t time.Time, p *Packet) {
 	}
 }
 
+func remove(ord []uint32, vals []uint32) (newOrd []uint32) {
+	newOrd = ord[:]
+	for _, s := range vals {
+		for i, v := range newOrd {
+			if v == s {
+				newOrd = append(newOrd[:i], newOrd[i+1:]...)
+				break
+			}
+		}
+	}
+
+	return
+}
+
 // sender side
 // what cumulative ack has been received
 func (w *window) rcvdPkt(
@@ -100,6 +114,21 @@ func (w *window) rcvdPkt(
 	}
 
 	w.order = w.order[ind:]
+
+	// handle SACKs
+	removeVals := make([]uint32, 0)
+	for i, v := range p.Sack {
+		if v {
+			seq := p.AckNo + uint32(1460*(i+1))
+			e := w.pkts[seq]
+			rtt = t.Sub(e.t)
+			delete(w.pkts, seq)
+			removeVals = append(removeVals, seq)
+		}
+	}
+
+	w.order = remove(w.order, removeVals)
+
 	if len(w.order) != len(w.pkts) {
 		log.WithFields(log.Fields{
 			"ind":   ind,
@@ -199,4 +228,24 @@ func (w *window) cumAck(start uint32) (uint32, error) {
 	}
 
 	return cumAck, nil
+}
+
+// receiver side
+// the SACK got-packet vector, starting from right after the cumulative ack
+// must call cumAck() before this to ensure cumulative ack is correct
+func (w *window) getSack(cumAck uint32) (sack []bool) {
+	w.mux.RLock()
+	defer w.mux.RUnlock()
+
+	sack = make([]bool, 16)
+	for _, seq := range w.order {
+		sackInd := (seq - cumAck) / 1460
+		if sackInd >= uint32(len(sack)) {
+			break
+		}
+
+		sack[sackInd-1] = true // -1 because we know the cumulative ack hasn't been received
+	}
+
+	return
 }
