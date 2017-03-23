@@ -7,8 +7,8 @@ import (
 	"github.mit.edu/hari/nimbus-cc/packetops"
 )
 
-// 1463 = 1500 - 28 (ip + udp) - 10 (my header)
-const PACKET_SIZE = 1462
+// 1463 = 1500 - 28 (ip + udp) - 12 (my header)
+const PACKET_SIZE = 1460
 
 type PacketFlag uint8
 
@@ -23,8 +23,9 @@ const (
 type Packet struct {
 	SeqNo   uint32     // 32 bits = 4 bytes
 	AckNo   uint32     // 32 bits = 4 bytes
-	Flag    PacketFlag // Upper 4 bits of Length int below = 1 byte
+	Flag    PacketFlag // Upper 4 bits of Length int below = 0.5 byte
 	Length  uint16     // Only use bottom 12 bits! Max size = 2^12 = 4096. 12 bits = 1.5 bytes
+	Sack    []bool     // bit vector, 16 bits = 2 bytes
 	Payload []byte
 }
 
@@ -59,6 +60,19 @@ func encode(p Packet) ([]byte, error) {
 		return buf.Bytes(), err
 	}
 
+	// make bit vector in uint16
+	sack := uint16(0)
+	for i, v := range p.Sack {
+		if v {
+			sack |= 1 << uint(i)
+		}
+	}
+
+	err = binary.Write(buf, binary.LittleEndian, sack)
+	if err != nil {
+		return buf.Bytes(), err
+	}
+
 	buf.Write(p.Payload)
 
 	return buf.Bytes(), err
@@ -76,6 +90,7 @@ func (pkt *Packet) Decode(
 	pkt.AckNo = p.AckNo
 	pkt.Flag = p.Flag
 	pkt.Length = p.Length
+	pkt.Sack = p.Sack
 	pkt.Payload = p.Payload
 
 	return nil
@@ -104,9 +119,20 @@ func decode(b []byte) (Packet, error) {
 	p.Length = field & 0xfff
 	p.Flag = PacketFlag((field & 0xf000) >> 12)
 
-	// SeqNo + AckNo + (Flag,Length) = 10 bytes
-	p.Payload = make([]byte, len(b)-10)
-	copy(p.Payload, b[10:])
+	var sack uint16
+	err = binary.Read(buf, binary.LittleEndian, &sack)
+	if err != nil {
+		return p, err
+	}
+
+	p.Sack = make([]bool, 0, 16)
+	for i := 0; i < 16; i++ {
+		p.Sack = append(p.Sack, ((sack>>uint(i))&1) == 1)
+	}
+
+	// SeqNo + AckNo + (Flag,Length) + SACK vector = 12 bytes
+	p.Payload = make([]byte, len(b)-12)
+	copy(p.Payload, b[12:])
 
 	return p, err
 }
