@@ -2,6 +2,7 @@ package ccpFlow
 
 import (
 	"fmt"
+	"time"
 
 	"ccp/ipc"
 )
@@ -14,7 +15,7 @@ var Complete DropEvent = DropEvent("complete")
 type Flow interface {
 	Name() string
 	Create(sockid uint32, send ipc.SendOnly)
-	Ack(ack uint32)
+	Ack(ack uint32, rtt time.Duration)
 	Drop(event DropEvent)
 }
 

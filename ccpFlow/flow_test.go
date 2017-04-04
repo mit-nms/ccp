@@ -2,6 +2,7 @@ package ccpFlow
 
 import (
 	"testing"
+	"time"
 
 	"ccp/ipc"
 )
@@ -16,7 +17,7 @@ func (t *TestFlow) Create(sockid uint32, send ipc.SendOnly) {
 	return
 }
 
-func (t *TestFlow) Ack(ack uint32) {
+func (t *TestFlow) Ack(ack uint32, rtt time.Duration) {
 	return
 }
 

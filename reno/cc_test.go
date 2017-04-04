@@ -3,6 +3,7 @@ package reno
 import (
 	"bytes"
 	"testing"
+	"time"
 
 	"ccp/ccpFlow"
 )
@@ -43,7 +44,7 @@ func TestReno(t *testing.T) {
 	}
 
 	t.Log("acking packets until 7310")
-	f.Ack(uint32(7310))
+	f.Ack(uint32(7310), time.Second)
 	if f.(*Reno).lastAck != 7310 || f.(*Reno).sockid != 42 {
 		t.Errorf("got \"%v\", expected lastAck=7310 and sockid=42", f)
 		return
@@ -55,7 +56,7 @@ func TestReno(t *testing.T) {
 		return
 	}
 
-	f.Ack(uint32(51170))
+	f.Ack(uint32(51170), time.Second)
 	if f.(*Reno).lastAck != 51170 || f.(*Reno).sockid != 42 {
 		t.Errorf("got \"%v\", expected lastAck=51170 and sockid=42", f)
 		return

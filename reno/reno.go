@@ -1,6 +1,8 @@
 package reno
 
 import (
+	"time"
+
 	"ccp/ccpFlow"
 	"ccp/ipc"
 
@@ -31,7 +33,7 @@ func (r *Reno) Create(socketid uint32, send ipc.SendOnly) {
 	r.ipc = send
 }
 
-func (r *Reno) Ack(ack uint32) {
+func (r *Reno) Ack(ack uint32, rtt time.Duration) {
 	newBytesAcked := float32(ack - r.lastAck)
 	// increase cwnd by 1 / cwnd per packet
 	r.cwnd += pktSize * (newBytesAcked / r.cwnd)

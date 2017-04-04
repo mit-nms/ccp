@@ -35,7 +35,7 @@ func handleAck(ack ipc.AckMsg) {
 		log.WithFields(log.Fields{"flowid": ack.SocketId}).Warn("Unknown flow")
 		return
 	} else {
-		flow.Ack(ack.AckNo)
+		flow.Ack(ack.AckNo, ack.Rtt)
 	}
 }
 
