@@ -4,6 +4,7 @@ PACKAGES = ./ipc \
 		   ./unixsocket \
 		   ./ccpFlow \
 		   ./reno \
+		   ./vegas \
 		   ./ccp
 
 all: compile test 

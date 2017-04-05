@@ -4,6 +4,7 @@ import (
 	"ccp/ccpFlow"
 	"ccp/ipc"
 	"ccp/reno"
+	"ccp/vegas"
 
 	log "github.com/Sirupsen/logrus"
 )
@@ -16,6 +17,7 @@ var flows map[uint32]ccpFlow.Flow
 
 func main() {
 	flows = make(map[uint32]ccpFlow.Flow)
+	vegas.Init()
 	reno.Init()
 
 	com, err := ipc.SetupCcpListen()
