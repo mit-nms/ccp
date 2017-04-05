@@ -6,11 +6,12 @@ PACKAGES = ./ipc \
 		   ./reno \
 		   ./vegas \
 		   ./cubic \
+		   ./nl_userapp \
 		   ./ccp
 
 all: compile test 
 
-compile: ccpl testClient testServer
+compile: ccpl testClient testServer nltest
 
 ccpl: capnpMsg/ccp.capnp.go build
 	go build -o ./ccpl ccp/ccp
@@ -33,8 +34,12 @@ testClient: build
 testServer: build
 	go build -o ./testServer ./tests/testServer/server.go
 
+nltest: build
+	go build -o ./nltest ccp/nl_userapp
+
 clean:
 	rm -rf ./capnpMsg
 	rm -f ./testClient
 	rm -f ./testServer
+	rm -f ./nltest
 	rm -f ./ccpl
