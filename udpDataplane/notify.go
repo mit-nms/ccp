@@ -55,6 +55,7 @@ func (sock *Sock) doNotify() {
 	totAck := uint32(0)
 	notifiedAckNo := uint32(0)
 	droppedPktNo := uint32(0)
+	srtt := time.Duration(0)
 	timeout := time.NewTimer(time.Second)
 	for {
 		select {
@@ -66,13 +67,21 @@ func (sock *Sock) doNotify() {
 			log.WithFields(log.Fields{
 				"name":          sock.name,
 				"acked":         totAck,
+				"rtt":           notifAck.rtt,
 				"notifiedAckNo": notifiedAckNo,
 			}).Info("notifyAcks")
+
+			if srtt == time.Duration(0) {
+				srtt = notifAck.rtt
+			} else {
+				srtt_ns := 0.875*float64(srtt.Nanoseconds()) + 0.125*float64(notifAck.rtt)
+				srtt = time.Duration(int64(srtt_ns)) * time.Nanosecond
+			}
 
 			if totAck-notifiedAckNo > sock.ackNotifyThresh {
 				// notify control plane of new acks
 				notifiedAckNo = totAck
-				writeAckMsg(sock.name, sock.port, sock.ipc, notifiedAckNo, notifAck.rtt)
+				writeAckMsg(sock.name, sock.port, sock.ipc, notifiedAckNo, srtt)
 			}
 
 			select {
