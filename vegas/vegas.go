@@ -41,10 +41,8 @@ func (v *Vegas) Create(socketid uint32, send ipc.SendOnly) {
 
 func (v *Vegas) Ack(ack uint32, RTT_TD time.Duration) {
 	RTT := float32(RTT_TD.Seconds())
-	if v.baseRTT <= 0 {
+	if v.baseRTT <= 0 || RTT < v.baseRTT {
 		v.baseRTT = RTT
-	} else {
-		v.baseRTT = min(v.baseRTT, RTT)
 	}
 	newBytesAcked := float32(ack - v.lastAck)
 
@@ -102,12 +100,4 @@ func Init() {
 	ccpFlow.Register("vegas", func() ccpFlow.Flow {
 		return &Vegas{}
 	})
-}
-
-func min(a, b float32) float32 {
-	if a < b {
-		return a
-	} else {
-		return b
-	}
 }

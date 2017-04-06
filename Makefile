@@ -5,6 +5,7 @@ PACKAGES = ./ipc \
 		   ./ccpFlow \
 		   ./reno \
 		   ./vegas \
+		   ./cubic \
 		   ./ccp
 
 all: compile test 
