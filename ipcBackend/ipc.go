@@ -3,16 +3,56 @@ package ipcbackend
 import (
 	"fmt"
 	"os"
-
-	"zombiezen.com/go/capnproto2"
+	"time"
 )
+
+type Msg interface {
+	Serialize() ([]byte, error)
+	Deserialize([]byte) error
+}
+
+type CreateMsg interface {
+	Msg
+	New(sid uint32, alg string)
+	SocketId() uint32
+	CongAlg() string
+}
+
+type AckMsg interface {
+	Msg
+	New(sid uint32, ack uint32, rtt time.Duration)
+	SocketId() uint32
+	AckNo() uint32
+	Rtt() time.Duration
+}
+
+type CwndMsg interface {
+	Msg
+	New(sid uint32, cwnd uint32)
+	SocketId() uint32
+	Cwnd() uint32
+}
+
+type DropMsg interface {
+	Msg
+	New(sid uint32, ev string)
+	SocketId() uint32
+	Event() string
+}
 
 type Backend interface {
 	SetupListen(l string, id uint32) Backend
 	SetupSend(l string, id uint32) Backend
 	SetupFinish() (Backend, error)
-	SendMsg(msg *capnp.Message) error
-	ListenMsg() (chan *capnp.Message, error)
+
+	GetCreateMsg() CreateMsg
+	GetAckMsg() AckMsg
+	GetCwndMsg() CwndMsg
+	GetDropMsg() DropMsg
+
+	SendMsg(msg Msg) error
+	Listen() chan Msg
+
 	Close() error
 }
 

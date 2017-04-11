@@ -5,15 +5,13 @@ import (
 
 	"ccp/ipcBackend"
 	"ccp/unixsocket"
-
-	"zombiezen.com/go/capnproto2"
 )
 
 type Ipc struct {
-	CreateNotify chan CreateMsg
-	AckNotify    chan AckMsg
-	CwndNotify   chan CwndMsg
-	DropNotify   chan DropMsg
+	CreateNotify chan ipcbackend.CreateMsg
+	AckNotify    chan ipcbackend.AckMsg
+	CwndNotify   chan ipcbackend.CwndMsg
+	DropNotify   chan ipcbackend.DropMsg
 
 	backend ipcbackend.Backend
 }
@@ -52,110 +50,77 @@ func SetupCli(sockid uint32) (*Ipc, error) {
 
 func SetupWithBackend(back ipcbackend.Backend) (*Ipc, error) {
 	i := &Ipc{
-		CreateNotify: make(chan CreateMsg),
-		AckNotify:    make(chan AckMsg),
-		CwndNotify:   make(chan CwndMsg),
-		DropNotify:   make(chan DropMsg),
+		CreateNotify: make(chan ipcbackend.CreateMsg),
+		AckNotify:    make(chan ipcbackend.AckMsg),
+		CwndNotify:   make(chan ipcbackend.CwndMsg),
+		DropNotify:   make(chan ipcbackend.DropMsg),
 		backend:      back,
 	}
 
-	ch, err := i.backend.ListenMsg()
-	if err != nil {
-		return nil, err
-	}
-
-	go i.parse(ch)
+	ch := i.backend.Listen()
+	go i.demux(ch)
 	return i, nil
 }
 
-func (i *Ipc) SendCreateMsg(socketId uint32, alg string) error {
-	msg, err := makeCreateMsg(socketId, alg)
-	if err != nil {
-		return err
+func (i *Ipc) demux(ch chan ipcbackend.Msg) {
+	for m := range ch {
+		switch m.(type) {
+		case ipcbackend.DropMsg:
+			i.DropNotify <- m.(ipcbackend.DropMsg)
+		case ipcbackend.CwndMsg:
+			i.CwndNotify <- m.(ipcbackend.CwndMsg)
+		case ipcbackend.AckMsg:
+			i.AckNotify <- m.(ipcbackend.AckMsg)
+		case ipcbackend.CreateMsg:
+			i.CreateNotify <- m.(ipcbackend.CreateMsg)
+		}
 	}
-
-	return i.backend.SendMsg(msg)
-}
-
-func (i *Ipc) SendDropMsg(socketId uint32, ev string) error {
-	msg, err := makeDropMsg(socketId, ev)
-	if err != nil {
-		return err
-	}
-
-	return i.backend.SendMsg(msg)
-}
-
-func (i *Ipc) SendAckMsg(socketId uint32, ackNo uint32, rtt time.Duration) error {
-	msg, err := makeNotifyAckMsg(socketId, ackNo, rtt)
-	if err != nil {
-		return err
-	}
-
-	return i.backend.SendMsg(msg)
 }
 
 func (i *Ipc) SendCwndMsg(socketId uint32, cwnd uint32) error {
-	msg, err := makeCwndMsg(socketId, cwnd)
-	if err != nil {
-		return err
-	}
+	m := i.backend.GetCwndMsg()
+	m.New(socketId, cwnd)
 
-	return i.backend.SendMsg(msg)
+	return i.backend.SendMsg(m)
 }
 
-func (i *Ipc) ListenCreateMsg() (chan CreateMsg, error) {
+func (i *Ipc) SendAckMsg(socketId uint32, ack uint32, rtt time.Duration) error {
+	m := i.backend.GetAckMsg()
+	m.New(socketId, ack, rtt)
+
+	return i.backend.SendMsg(m)
+}
+
+func (i *Ipc) SendCreateMsg(socketId uint32, alg string) error {
+	m := i.backend.GetCreateMsg()
+	m.New(socketId, alg)
+
+	return i.backend.SendMsg(m)
+}
+
+func (i *Ipc) SendDropMsg(socketId uint32, ev string) error {
+	m := i.backend.GetDropMsg()
+	m.New(socketId, ev)
+
+	return i.backend.SendMsg(m)
+}
+
+func (i *Ipc) ListenCreateMsg() (chan ipcbackend.CreateMsg, error) {
 	return i.CreateNotify, nil
 }
 
-func (i *Ipc) ListenDropMsg() (chan DropMsg, error) {
+func (i *Ipc) ListenDropMsg() (chan ipcbackend.DropMsg, error) {
 	return i.DropNotify, nil
 }
 
-func (i *Ipc) ListenAckMsg() (chan AckMsg, error) {
+func (i *Ipc) ListenAckMsg() (chan ipcbackend.AckMsg, error) {
 	return i.AckNotify, nil
 }
 
-func (i *Ipc) ListenCwndMsg() (chan CwndMsg, error) {
+func (i *Ipc) ListenCwndMsg() (chan ipcbackend.CwndMsg, error) {
 	return i.CwndNotify, nil
 }
 
-func (i *Ipc) Close() error {
-	return i.backend.Close()
-}
-
-func (i *Ipc) parse(msgs chan *capnp.Message) {
-	for msg := range msgs {
-		if akMsg, err := readAckMsg(msg); err == nil {
-			select {
-			case i.AckNotify <- akMsg:
-			default:
-			}
-			continue
-		}
-
-		if cwMsg, err := readCwndMsg(msg); err == nil {
-			select {
-			case i.CwndNotify <- cwMsg:
-			default:
-			}
-			continue
-		}
-
-		if drMsg, err := readDropMsg(msg); err == nil {
-			select {
-			case i.DropNotify <- drMsg:
-			default:
-			}
-			continue
-		}
-
-		if crMsg, err := readCreateMsg(msg); err == nil {
-			select {
-			case i.CreateNotify <- crMsg:
-			default:
-			}
-			continue
-		}
-	}
+func (i *Ipc) Close() {
+	i.backend.Close()
 }

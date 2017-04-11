@@ -5,6 +5,7 @@ import (
 
 	"ccp/ccpFlow"
 	"ccp/ipc"
+	"ccp/ipcBackend"
 
 	log "github.com/Sirupsen/logrus"
 )
@@ -23,14 +24,14 @@ func (sock *Sock) setupIpc() error {
 		return err
 	}
 
-	go func(ch chan ipc.CwndMsg) {
+	go func(ch chan ipcbackend.CwndMsg) {
 		for cwnd := range ch {
 			log.WithFields(log.Fields{
 				"newCwnd": cwnd.Cwnd,
 				"cwnd":    sock.cwnd,
 			}).Info("update cwnd")
 			sock.mux.Lock()
-			sock.cwnd = cwnd.Cwnd
+			sock.cwnd = cwnd.Cwnd()
 			sock.mux.Unlock()
 			sock.shouldTx <- struct{}{}
 		}

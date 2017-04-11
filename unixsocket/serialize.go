@@ -1,4 +1,4 @@
-package ipc
+package unixsocket
 
 import (
 	"fmt"
@@ -8,27 +8,6 @@ import (
 
 	"zombiezen.com/go/capnproto2"
 )
-
-type CreateMsg struct {
-	SocketId uint32
-	CongAlg  string
-}
-
-type AckMsg struct {
-	SocketId uint32
-	AckNo    uint32
-	Rtt      time.Duration
-}
-
-type CwndMsg struct {
-	SocketId uint32
-	Cwnd     uint32
-}
-
-type DropMsg struct {
-	SocketId uint32
-	Event    string
-}
 
 func makeCreateMsg(socketId uint32, alg string) (*capnp.Message, error) {
 	msg, seg, err := capnp.NewMessage(capnp.SingleSegment(nil))
@@ -48,32 +27,33 @@ func makeCreateMsg(socketId uint32, alg string) (*capnp.Message, error) {
 	return msg, nil
 }
 
-func readCreateMsg(msg *capnp.Message) (c CreateMsg, e error) {
+func (c *CreateMsg) readCreateMsg(msg *capnp.Message) (err error) {
 	defer func() {
 		if panic := recover(); panic != nil {
-			e = panic.(error)
+			err = panic.(error)
 		}
 	}()
 
 	createMsg, err := capnpMsg.ReadRootStrMsg(msg)
 	if err != nil {
-		return CreateMsg{}, err
+		return err
 	}
 
 	if createMsg.Type() != capnpMsg.MsgType_create {
-		return CreateMsg{}, fmt.Errorf("Message not of type Create: %v", createMsg.Type())
+		return fmt.Errorf("Message not of type Create: %v", createMsg.Type())
 	}
 
 	alg, err := createMsg.Val()
 	if err != nil {
-		return CreateMsg{}, err
+		return err
 	}
 
-	return CreateMsg{SocketId: createMsg.SocketId(), CongAlg: alg}, nil
+	c.socketId = createMsg.SocketId()
+	c.congAlg = alg
+	return nil
 }
 
 func makeNotifyAckMsg(socketId uint32, ackNo uint32, rtt time.Duration) (*capnp.Message, error) {
-	// Cap'n Proto! Message passing interface to mmap file
 	msg, seg, err := capnp.NewMessage(capnp.SingleSegment(nil))
 	if err != nil {
 		return nil, err
@@ -92,31 +72,29 @@ func makeNotifyAckMsg(socketId uint32, ackNo uint32, rtt time.Duration) (*capnp.
 	return msg, nil
 }
 
-func readAckMsg(msg *capnp.Message) (a AckMsg, e error) {
+func (a *AckMsg) readAckMsg(msg *capnp.Message) (err error) {
 	defer func() {
 		if panic := recover(); panic != nil {
-			e = panic.(error)
+			err = panic.(error)
 		}
 	}()
 
 	ackMsg, err := capnpMsg.ReadRootUInt32UInt64Msg(msg)
 	if err != nil {
-		return AckMsg{}, err
+		return err
 	}
 
 	if ackMsg.Type() != capnpMsg.MsgType_ack {
-		return AckMsg{}, fmt.Errorf("Message not of type Ack: %v", ackMsg.Type())
+		return fmt.Errorf("Message not of type Ack: %v", ackMsg.Type())
 	}
 
-	return AckMsg{
-		SocketId: ackMsg.SocketId(),
-		AckNo:    ackMsg.NumInt32(),
-		Rtt:      time.Duration(ackMsg.NumInt64()),
-	}, nil
+	a.socketId = ackMsg.SocketId()
+	a.ackNo = ackMsg.NumInt32()
+	a.rtt = time.Duration(ackMsg.NumInt64())
+	return nil
 }
 
 func makeCwndMsg(socketId uint32, cwnd uint32) (*capnp.Message, error) {
-	// Cap'n Proto! Message passing interface to mmap file
 	msg, seg, err := capnp.NewMessage(capnp.SingleSegment(nil))
 	if err != nil {
 		return nil, err
@@ -134,23 +112,25 @@ func makeCwndMsg(socketId uint32, cwnd uint32) (*capnp.Message, error) {
 	return msg, nil
 }
 
-func readCwndMsg(msg *capnp.Message) (c CwndMsg, e error) {
+func (c *CwndMsg) readCwndMsg(msg *capnp.Message) (err error) {
 	defer func() {
 		if panic := recover(); panic != nil {
-			e = panic.(error)
+			err = panic.(error)
 		}
 	}()
 
 	cwndUpdateMsg, err := capnpMsg.ReadRootUIntMsg(msg)
 	if err != nil {
-		return CwndMsg{}, err
+		return err
 	}
 
 	if cwndUpdateMsg.Type() != capnpMsg.MsgType_cwnd {
-		return CwndMsg{}, fmt.Errorf("Message not of type Cwnd: %v", cwndUpdateMsg.Type())
+		return fmt.Errorf("Message not of type Cwnd: %v", cwndUpdateMsg.Type())
 	}
 
-	return CwndMsg{SocketId: cwndUpdateMsg.SocketId(), Cwnd: cwndUpdateMsg.Val()}, nil
+	c.socketId = cwndUpdateMsg.SocketId()
+	c.cwnd = cwndUpdateMsg.Val()
+	return nil
 }
 
 func makeDropMsg(socketId uint32, ev string) (*capnp.Message, error) {
@@ -171,26 +151,28 @@ func makeDropMsg(socketId uint32, ev string) (*capnp.Message, error) {
 	return msg, nil
 }
 
-func readDropMsg(msg *capnp.Message) (d DropMsg, e error) {
+func (d *DropMsg) readDropMsg(msg *capnp.Message) (err error) {
 	defer func() {
 		if panic := recover(); panic != nil {
-			e = panic.(error)
+			err = panic.(error)
 		}
 	}()
 
 	dropMsg, err := capnpMsg.ReadRootStrMsg(msg)
 	if err != nil {
-		return DropMsg{}, err
+		return err
 	}
 
 	if dropMsg.Type() != capnpMsg.MsgType_drop {
-		return DropMsg{}, fmt.Errorf("Message not of type Drop: %v", dropMsg.Type())
+		return fmt.Errorf("Message not of type Drop: %v", dropMsg.Type())
 	}
 
 	ev, err := dropMsg.Val()
 	if err != nil {
-		return DropMsg{}, err
+		return err
 	}
 
-	return DropMsg{SocketId: dropMsg.SocketId(), Event: ev}, nil
+	d.socketId = dropMsg.SocketId()
+	d.event = ev
+	return nil
 }

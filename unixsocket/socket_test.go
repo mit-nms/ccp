@@ -6,44 +6,7 @@ import (
 	"os"
 	"testing"
 	"time"
-
-	"ccp/capnpMsg"
-	"ccp/ipc"
-
-	"zombiezen.com/go/capnproto2"
 )
-
-func makeNotifyAckMsg(socketId uint32, ackNo uint32) (*capnp.Message, error) {
-	// Cap'n Proto! Message passing interface to mmap file
-	msg, seg, err := capnp.NewMessage(capnp.SingleSegment(nil))
-	if err != nil {
-		return nil, err
-	}
-
-	notifyAckMsg, err := capnpMsg.NewRootUIntMsg(seg)
-	if err != nil {
-		return nil, err
-	}
-
-	notifyAckMsg.SetType(capnpMsg.MsgType_ack)
-	notifyAckMsg.SetSocketId(socketId)
-	notifyAckMsg.SetVal(ackNo)
-
-	return msg, nil
-}
-
-func readAckMsg(msg *capnp.Message) (ipc.AckMsg, error) {
-	ackMsg, err := capnpMsg.ReadRootUIntMsg(msg)
-	if err != nil {
-		return ipc.AckMsg{}, err
-	}
-
-	if ackMsg.Type() != capnpMsg.MsgType_ack {
-		return ipc.AckMsg{}, fmt.Errorf("Message not of type Ack: %v", ackMsg.Type())
-	}
-
-	return ipc.AckMsg{SocketId: ackMsg.SocketId(), AckNo: ackMsg.Val()}, nil
-}
 
 func TestCommunication(t *testing.T) {
 	rdone := make(chan error)
@@ -74,6 +37,7 @@ func TestCommunication(t *testing.T) {
 }
 
 func reader(ready chan interface{}, done chan error) {
+	os.RemoveAll("/tmp/ccp-test")
 	addrOut, err := net.ResolveUnixAddr("unixgram", "/tmp/ccp-test")
 	if err != nil {
 		done <- err
@@ -95,20 +59,16 @@ func reader(ready chan interface{}, done chan error) {
 		return
 	}
 
-	msg, err := capnp.Unmarshal(buf)
+	sk := New()
+	decMsg := sk.GetAckMsg()
+	err = decMsg.Deserialize(buf)
 	if err != nil {
 		done <- err
 		return
 	}
 
-	ackMsg, err := readAckMsg(msg)
-	if err != nil {
-		done <- err
-		return
-	}
-
-	if ackMsg.SocketId != 4 || ackMsg.AckNo != 42 {
-		done <- fmt.Errorf("wrong message\ngot (%v, %v)\nexpected (%v, %v)", ackMsg.SocketId, ackMsg.AckNo, 4, 42)
+	if decMsg.SocketId() != 4 || decMsg.AckNo() != 42 {
+		done <- fmt.Errorf("wrong message\ngot (%v, %v)\nexpected (%v, %v)", decMsg.SocketId(), decMsg.AckNo(), 4, 42)
 		return
 	}
 
@@ -137,13 +97,10 @@ func writer(ready chan interface{}, done chan error) {
 		out: out,
 	}
 
-	msg, err := makeNotifyAckMsg(4, 42)
-	if err != nil {
-		done <- err
-		return
-	}
+	akMsg := s.GetAckMsg()
+	akMsg.New(4, 42, time.Duration(time.Millisecond))
 
-	err = s.SendMsg(msg)
+	err = s.SendMsg(akMsg)
 	if err != nil {
 		done <- err
 		return

@@ -24,7 +24,7 @@ func reader(b ipcbackend.Backend, ready chan interface{}, done chan error) {
 	ackMsg := <-inCh
 	log.Info("got msg")
 
-	if ackMsg.SocketId != 4 || ackMsg.AckNo != 42 {
+	if ackMsg.SocketId() != 4 || ackMsg.AckNo() != 42 {
 		done <- fmt.Errorf("wrong message\ngot (%v, %v)\nexpected (%v, %v)", ackMsg.SocketId, ackMsg.AckNo, 4, 42)
 		return
 	}

@@ -7,7 +7,6 @@ import (
 	"ccp/ipcBackend"
 
 	log "github.com/Sirupsen/logrus"
-	"zombiezen.com/go/capnproto2"
 )
 
 type SocketIpc struct {
@@ -15,9 +14,11 @@ type SocketIpc struct {
 	out *net.UnixConn
 
 	openFiles []string
-	listenCh  chan *capnp.Message
-	err       error
-	killed    chan interface{}
+
+	listenCh chan []byte
+
+	err    error
+	killed chan interface{}
 }
 
 func New() ipcbackend.Backend {
@@ -52,7 +53,7 @@ func (s *SocketIpc) SetupListen(loc string, id uint32) ipcbackend.Backend {
 
 	s.in = so
 	s.killed = make(chan interface{})
-	s.listenCh = make(chan *capnp.Message)
+	s.listenCh = make(chan []byte)
 	go s.listen()
 	return s
 }
@@ -95,8 +96,24 @@ func (s *SocketIpc) Close() error {
 	return nil
 }
 
-func (s *SocketIpc) SendMsg(msg *capnp.Message) error {
-	buf, err := msg.Marshal()
+func (s *SocketIpc) GetCreateMsg() ipcbackend.CreateMsg {
+	return &CreateMsg{}
+}
+
+func (s *SocketIpc) GetAckMsg() ipcbackend.AckMsg {
+	return &AckMsg{}
+}
+
+func (s *SocketIpc) GetCwndMsg() ipcbackend.CwndMsg {
+	return &CwndMsg{}
+}
+
+func (s *SocketIpc) GetDropMsg() ipcbackend.DropMsg {
+	return &DropMsg{}
+}
+
+func (s *SocketIpc) SendMsg(msg ipcbackend.Msg) error {
+	buf, err := msg.Serialize()
 	if err != nil {
 		return err
 	}
@@ -109,8 +126,23 @@ func (s *SocketIpc) SendMsg(msg *capnp.Message) error {
 	return nil
 }
 
-func (s *SocketIpc) ListenMsg() (chan *capnp.Message, error) {
-	return s.listenCh, nil
+func (s *SocketIpc) Listen() chan ipcbackend.Msg {
+	msgCh := make(chan ipcbackend.Msg)
+
+	go func() {
+		for {
+			select {
+			case <-s.killed:
+				close(msgCh)
+				return
+			case buf := <-s.listenCh:
+				m := parse(buf)
+				msgCh <- m
+			}
+		}
+	}()
+
+	return msgCh
 }
 
 func (s *SocketIpc) listen() {
@@ -148,14 +180,33 @@ func (s *SocketIpc) listen() {
 		}
 
 		writePos = (writePos + n) % len(buf)
-		msg, err := capnp.Unmarshal(ring[:n])
-		if err != nil {
-			log.WithFields(log.Fields{
-				"where": "socketIpc.listenMsg.unmarshal",
-			}).Warn(err)
-			continue
-		}
-
-		s.listenCh <- msg
+		s.listenCh <- ring[:n]
 	}
+}
+
+func parse(buf []byte) ipcbackend.Msg {
+	akMsg := &AckMsg{}
+	if err := akMsg.Deserialize(buf); err == nil {
+		return akMsg
+	}
+
+	cwMsg := &CwndMsg{}
+	if err := cwMsg.Deserialize(buf); err == nil {
+		return cwMsg
+	}
+
+	drMsg := &DropMsg{}
+	if err := drMsg.Deserialize(buf); err == nil {
+		return drMsg
+	}
+
+	crMsg := &CreateMsg{}
+	if err := crMsg.Deserialize(buf); err == nil {
+		return crMsg
+	}
+
+	log.WithFields(log.Fields{
+		"received": buf,
+	}).Panic("received msg doesn't match any type")
+	return nil
 }
