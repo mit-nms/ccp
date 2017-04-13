@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"ccp/ipcbackend"
+	"ccp/ipcBackend"
 )
 
 func TestEncodeAckMsg(t *testing.T) {
