@@ -9,7 +9,12 @@ import (
 )
 
 func nlInit() (*netlink.Conn, error) {
-	nl, err := netlink.Dial(unix.NETLINK_USERSOCK, &netlink.Config{Groups: 0})
+	nl, err := netlink.Dial(
+		unix.NETLINK_USERSOCK,
+		&netlink.Config{
+			Groups: 0,
+		},
+	)
 	if err != nil {
 		return nil, err
 	}
