@@ -23,12 +23,70 @@ func main() {
 	}
 
 	msgs := nl.Listen()
+	testControl(nl, msgs)
+}
+
+func testControl(nl ipcbackend.Backend, msgs chan ipcbackend.Msg) {
+	cwnd := uint32(10)
+	for msg := range msgs {
+		switch msg.(type) {
+		case ipcbackend.CreateMsg:
+			cr := msg.(ipcbackend.CreateMsg)
+			log.WithFields(log.Fields{
+				"got": fmt.Sprintf("(%v, %v)", cr.SocketId(), cr.CongAlg()),
+			}).Info("rcvd create")
+		case ipcbackend.AckMsg:
+			ack := msg.(ipcbackend.AckMsg)
+			log.WithFields(log.Fields{
+				"got":  fmt.Sprintf("(%v, %v, %v)", ack.SocketId(), ack.AckNo(), ack.Rtt()),
+				"cwnd": cwnd,
+			}).Info("rcvd ack")
+
+			cwnd += 2
+
+			cwMsg := nl.GetCwndMsg()
+			cwMsg.New(ack.SocketId(), cwnd)
+			nl.SendMsg(cwMsg)
+			log.WithFields(log.Fields{
+				"sent": fmt.Sprintf("(%v, %v)", cwMsg.SocketId(), cwMsg.Cwnd()),
+				"cwnd": cwnd,
+			}).Info("sent cwnd msg")
+		default:
+			log.WithFields(log.Fields{
+				"msg": msg,
+			}).Warn("bad message type")
+		}
+	}
+}
+
+func logMsgs(msgs chan ipcbackend.Msg) {
+	for msg := range msgs {
+		switch msg.(type) {
+		case ipcbackend.CreateMsg:
+			cr := msg.(ipcbackend.CreateMsg)
+			log.WithFields(log.Fields{
+				"got": fmt.Sprintf("(%v, %v)", cr.SocketId(), cr.CongAlg()),
+			}).Info("rcvd create")
+		case ipcbackend.AckMsg:
+			ack := msg.(ipcbackend.AckMsg)
+			log.WithFields(log.Fields{
+				"got": fmt.Sprintf("(%v, %v, %v)", ack.SocketId(), ack.AckNo(), ack.Rtt()),
+			}).Info("rcvd ack")
+		default:
+			log.WithFields(log.Fields{
+				"msg": msg,
+			}).Warn("bad message type")
+		}
+	}
+}
+
+func test(nl ipcbackend.Backend, msgs chan ipcbackend.Msg) {
 	msg := <-msgs
 
 	log.WithFields(log.Fields{
 		"msg": msg,
 	}).Info("got msg")
-	err = expectCreate(msg, 42, "reno")
+	err := expectCreate(msg, 42, "reno")
 	if err != nil {
 
 	}
