@@ -76,7 +76,7 @@ func handleCreate(cr ipcbackend.CreateMsg) {
 		}
 	}
 
-	ipCh, err := ipc.SetupCcpSend(cr.SocketId())
+	ipCh, err := ipc.SetupCcpSend(dp, cr.SocketId())
 	if err != nil {
 		log.WithFields(log.Fields{"flowid": cr.SocketId()}).Error("Error creating ccp->socket ipc channel for flow")
 	}

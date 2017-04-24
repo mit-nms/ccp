@@ -1,6 +1,8 @@
 package main
 
 import (
+	"flag"
+
 	"ccp/ccpFlow"
 	"ccp/ipc"
 	"ccp/reno"
@@ -9,18 +11,37 @@ import (
 	log "github.com/Sirupsen/logrus"
 )
 
+var datapath = flag.String("datapath", "udp", "which IPC backend to use (udp|kernel)")
+
 func init() {
 	log.SetLevel(log.InfoLevel)
-}
-
-var flows map[uint32]ccpFlow.Flow
-
-func main() {
 	flows = make(map[uint32]ccpFlow.Flow)
 	vegas.Init()
 	reno.Init()
+}
 
-	com, err := ipc.SetupCcpListen()
+var flows map[uint32]ccpFlow.Flow
+var dp ipc.Datapath
+
+func main() {
+	flag.Parse()
+
+	log.WithFields(log.Fields{
+		"datapath": *datapath,
+	}).Warn("datapath")
+	switch *datapath {
+	case "udp":
+		dp = ipc.UDP
+	case "kernel":
+		dp = ipc.KERNEL
+	default:
+		log.WithFields(log.Fields{
+			"datapath": *datapath,
+		}).Warn("unknown datapath")
+		return
+	}
+
+	com, err := ipc.SetupCcpListen(dp)
 	if err != nil {
 		log.Error(err)
 		return

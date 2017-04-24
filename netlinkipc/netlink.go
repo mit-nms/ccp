@@ -70,6 +70,7 @@ func (s *NetlinkIpc) SetupFinish() (ipcbackend.Backend, error) {
 		}).Error("error setting up IPC")
 		return s, s.err
 	} else {
+		s.killed = make(chan interface{})
 		return s, nil
 	}
 }

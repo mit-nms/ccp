@@ -1,10 +1,21 @@
 package ipc
 
 import (
+	"fmt"
 	"time"
 
 	"ccp/ipcBackend"
+	"ccp/netlinkipc"
 	"ccp/unixsocket"
+
+	log "github.com/Sirupsen/logrus"
+)
+
+type Datapath int
+
+const (
+	UDP Datapath = iota
+	KERNEL
 )
 
 type Ipc struct {
@@ -21,8 +32,19 @@ type SendOnly interface {
 	SendCwndMsg(socketId uint32, cwnd uint32) error
 }
 
-func SetupCcpListen() (*Ipc, error) {
-	back, err := unixsocket.New().SetupListen("ccp-in", 0).SetupFinish()
+func SetupCcpListen(datapath Datapath) (*Ipc, error) {
+	var back ipcbackend.Backend
+	var err error
+
+	switch datapath {
+	case UDP:
+		back, err = unixsocket.New().SetupListen("ccp-in", 0).SetupFinish()
+	case KERNEL:
+		back, err = netlinkipc.New().SetupListen("", 0).SetupFinish()
+	default:
+		return nil, fmt.Errorf("unknown datapath")
+	}
+
 	if err != nil {
 		return nil, err
 	}
@@ -30,8 +52,19 @@ func SetupCcpListen() (*Ipc, error) {
 	return SetupWithBackend(back)
 }
 
-func SetupCcpSend(sockid uint32) (SendOnly, error) {
-	back, err := unixsocket.New().SetupSend("ccp-out", sockid).SetupFinish()
+func SetupCcpSend(datapath Datapath, sockid uint32) (SendOnly, error) {
+	var back ipcbackend.Backend
+	var err error
+
+	switch datapath {
+	case UDP:
+		back, err = unixsocket.New().SetupSend("ccp-out", sockid).SetupFinish()
+	case KERNEL:
+		back, err = netlinkipc.New().SetupSend("", 0).SetupFinish()
+	default:
+		return nil, fmt.Errorf("unknown datapath")
+	}
+
 	if err != nil {
 		return nil, err
 	}
@@ -39,6 +72,8 @@ func SetupCcpSend(sockid uint32) (SendOnly, error) {
 	return SetupWithBackend(back)
 }
 
+// Setup both sending and receiving
+// Only useful for UDP datapath
 func SetupCli(sockid uint32) (*Ipc, error) {
 	back, err := unixsocket.New().SetupSend("ccp-in", 0).SetupListen("ccp-out", sockid).SetupFinish()
 	if err != nil {
@@ -73,6 +108,10 @@ func (i *Ipc) demux(ch chan ipcbackend.Msg) {
 			i.AckNotify <- m.(ipcbackend.AckMsg)
 		case ipcbackend.CreateMsg:
 			i.CreateNotify <- m.(ipcbackend.CreateMsg)
+		default:
+			log.WithFields(log.Fields{
+				"msg": m,
+			}).Warn("unknown message")
 		}
 	}
 }

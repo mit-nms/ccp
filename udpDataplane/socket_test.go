@@ -14,7 +14,7 @@ import (
 func TestBasicTransfer(t *testing.T) {
 	fmt.Println("starting...")
 	// create dummy ccp
-	ccp, err := ipc.SetupCcpListen()
+	ccp, err := ipc.SetupCcpListen(ipc.UDP)
 	if err != nil {
 		t.Error(err)
 		return
@@ -27,7 +27,7 @@ func TestBasicTransfer(t *testing.T) {
 
 func TestLongerTransfer(t *testing.T) {
 	// create dummy ccp
-	ccp, err := ipc.SetupCcpListen()
+	ccp, err := ipc.SetupCcpListen(ipc.UDP)
 	if err != nil {
 		t.Error(err)
 		return
@@ -40,7 +40,7 @@ func TestLongerTransfer(t *testing.T) {
 
 func TestLongerTransferBigCwnd(t *testing.T) {
 	// create dummy ccp
-	ccp, err := ipc.SetupCcpListen()
+	ccp, err := ipc.SetupCcpListen(ipc.UDP)
 	if err != nil {
 		t.Error(err)
 		return
