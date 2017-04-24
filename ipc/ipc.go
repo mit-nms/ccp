@@ -130,9 +130,9 @@ func (i *Ipc) SendAckMsg(socketId uint32, ack uint32, rtt time.Duration) error {
 	return i.backend.SendMsg(m)
 }
 
-func (i *Ipc) SendCreateMsg(socketId uint32, alg string) error {
+func (i *Ipc) SendCreateMsg(socketId uint32, startSeq uint32, alg string) error {
 	m := i.backend.GetCreateMsg()
-	m.New(socketId, alg)
+	m.New(socketId, startSeq, alg)
 
 	return i.backend.SendMsg(m)
 }

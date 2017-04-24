@@ -13,11 +13,13 @@ import (
 
 type CreateMsg struct {
 	socketId uint32
+	startSeq uint32
 	congAlg  string
 }
 
-func (c *CreateMsg) New(sid uint32, alg string) {
+func (c *CreateMsg) New(sid uint32, startSeq uint32, alg string) {
 	c.socketId = sid
+	c.startSeq = startSeq
 	c.congAlg = alg
 }
 
@@ -25,25 +27,31 @@ func (c *CreateMsg) SocketId() uint32 {
 	return c.socketId
 }
 
+func (c *CreateMsg) StartSeq() uint32 {
+	return c.startSeq
+}
+
 func (c *CreateMsg) CongAlg() string {
 	return c.congAlg
 }
 
 func (c *CreateMsg) Serialize() ([]byte, error) {
-	return writeUInt32AndString(
+	return writeUInt32AndUInt32AndString(
 		CREATE,
 		c.socketId,
+		c.startSeq,
 		c.congAlg,
 	)
 }
 
 func (c *CreateMsg) Deserialize(buf []byte) error {
-	t, sid, alg := readUInt32AndString(buf)
+	t, sid, stSq, alg := readUInt32AndUInt32AndString(buf)
 	if t != CREATE {
 		return fmt.Errorf("not a create message: %d", t)
 	}
 
 	c.socketId = sid
+	c.startSeq = stSq
 	c.congAlg = alg
 	return nil
 }

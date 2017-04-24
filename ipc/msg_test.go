@@ -23,7 +23,7 @@ func TestParse(t *testing.T) {
 	go i.demux(msgs)
 
 	createMsg := i.backend.GetCreateMsg()
-	createMsg.New(3, "reno")
+	createMsg.New(3, 0, "reno")
 
 	ackMsg := i.backend.GetAckMsg()
 	ackMsg.New(4, 568, time.Second)

@@ -38,7 +38,7 @@ func (sock *Sock) setupIpc() error {
 	}(cwndChanges)
 	go sock.doNotify()
 
-	sock.ipc.SendCreateMsg(sock.port, "reno")
+	sock.ipc.SendCreateMsg(sock.port, 0, "reno")
 	return nil
 }
 

@@ -13,9 +13,10 @@ type Msg interface {
 
 type CreateMsg interface {
 	Msg
-	New(sid uint32, alg string)
+	New(sid uint32, startSeq uint32, alg string)
 	SocketId() uint32
 	CongAlg() string
+	StartSeq() uint32
 }
 
 type AckMsg interface {

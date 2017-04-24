@@ -13,7 +13,7 @@ func (t *TestFlow) Name() string {
 	return "mock"
 }
 
-func (t *TestFlow) Create(sockid uint32, send ipc.SendOnly) {
+func (t *TestFlow) Create(sockid uint32, send ipc.SendOnly, stSq uint32, pktsz uint32) {
 	return
 }
 

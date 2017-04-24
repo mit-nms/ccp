@@ -36,51 +36,38 @@ func TestReno(t *testing.T) {
 
 	ipcMockCh := make(chan uint32)
 	mockIpc := &MockSendOnly{ch: ipcMockCh}
-	f.Create(42, mockIpc)
+	f.Create(42, mockIpc, 1462, 0)
 
 	if f.(*Reno).lastAck != 0 || f.(*Reno).sockid != 42 {
 		t.Errorf("got \"%v\", expected lastAck=0 and sockid=42", f)
 		return
 	}
 
-	t.Log("acking packets until 7310")
-	f.Ack(uint32(7310), time.Second)
-	if f.(*Reno).lastAck != 7310 || f.(*Reno).sockid != 42 {
-		t.Errorf("got \"%v\", expected lastAck=7310 and sockid=42", f)
+	f.Ack(uint32(292400), time.Second)
+	if f.(*Reno).lastAck != 292400 || f.(*Reno).sockid != 42 {
+		t.Errorf("got \"%v\", expected lastAck=292400 and sockid=42", f)
 		return
 	}
 
 	c := <-ipcMockCh
-	if c != 8772 {
-		t.Errorf("expected cwnd 8772, got %d", c)
-		return
-	}
-
-	f.Ack(uint32(51170), time.Second)
-	if f.(*Reno).lastAck != 51170 || f.(*Reno).sockid != 42 {
-		t.Errorf("got \"%v\", expected lastAck=51170 and sockid=42", f)
-		return
-	}
-
-	c = <-ipcMockCh
-	if c != 16082 {
-		t.Errorf("expected cwnd 16082, got %d", c)
+	if c != 43860 {
+		t.Errorf("expected cwnd 43860, got %d", c)
 		return
 	}
 
 	t.Log("isolated drop")
 	f.Drop(ccpFlow.Isolated)
 	c = <-ipcMockCh
-	if c != 8041 {
-		t.Errorf("expected cwnd 8041, got %d", c)
+	if c != 21930 {
+		t.Errorf("expected cwnd 21930, got %d", c)
 		return
 	}
 
 	t.Log("complete drop")
 	f.Drop(ccpFlow.Complete)
 	c = <-ipcMockCh
-	if c != 7310 {
-		t.Errorf("expected cwnd 7310, got %d", c)
+	if c != 14620 {
+		t.Errorf("expected cwnd 14620, got %d", c)
 		return
 	}
 }

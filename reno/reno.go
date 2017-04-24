@@ -9,12 +9,11 @@ import (
 	log "github.com/Sirupsen/logrus"
 )
 
-const pktSize = 1462
-const initCwnd = pktSize * 5
-
 // implement ccpFlow.Flow interface
 type Reno struct {
-	// state
+	pktSize  uint32
+	initCwnd float32
+
 	cwnd    float32
 	lastAck uint32
 
@@ -26,17 +25,28 @@ func (r *Reno) Name() string {
 	return "reno"
 }
 
-func (r *Reno) Create(socketid uint32, send ipc.SendOnly) {
+func (r *Reno) Create(
+	socketid uint32,
+	send ipc.SendOnly,
+	pktsz uint32,
+	startSeq uint32,
+) {
 	r.sockid = socketid
-	r.lastAck = 0
-	r.cwnd = initCwnd
 	r.ipc = send
+	r.pktSize = pktsz
+	r.initCwnd = float32(pktsz * 10)
+	r.cwnd = r.initCwnd
+	if startSeq == 0 {
+		r.lastAck = startSeq
+	} else {
+		r.lastAck = startSeq - 1
+	}
 }
 
 func (r *Reno) Ack(ack uint32, rtt time.Duration) {
 	newBytesAcked := float32(ack - r.lastAck)
 	// increase cwnd by 1 / cwnd per packet
-	r.cwnd += pktSize * (newBytesAcked / r.cwnd)
+	r.cwnd += float32(r.pktSize) * (newBytesAcked / r.cwnd)
 	// notify increased cwnd
 	r.notifyCwnd()
 
@@ -55,11 +65,11 @@ func (r *Reno) Drop(ev ccpFlow.DropEvent) {
 	switch ev {
 	case ccpFlow.Isolated:
 		r.cwnd /= 2
-		if r.cwnd < initCwnd {
-			r.cwnd = initCwnd
+		if r.cwnd < r.initCwnd {
+			r.cwnd = r.initCwnd
 		}
 	case ccpFlow.Complete:
-		r.cwnd = initCwnd
+		r.cwnd = r.initCwnd
 	default:
 		log.WithFields(log.Fields{
 			"event": ev,

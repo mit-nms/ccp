@@ -12,12 +12,11 @@ import (
 	log "github.com/Sirupsen/logrus"
 )
 
-const pktSize = 1460
-const initCwnd = 5
-
 // implement ccpFlow.Flow interface
 type Cubic struct {
-	// state
+	pktSize  float32
+	initCwnd float32
+
 	cwnd    float32
 	lastAck uint32
 	sockid  uint32
@@ -44,12 +43,19 @@ func (c *Cubic) Name() string {
 	return "cubic"
 }
 
-func (c *Cubic) Create(socketid uint32, send ipc.SendOnly) {
+func (c *Cubic) Create(
+	socketid uint32,
+	send ipc.SendOnly,
+	pktsz uint32,
+	startSeq uint32,
+) {
 	c.sockid = socketid
+	c.pktSize = float32(pktsz)
 	c.lastAck = 0
 	c.ipc = send
 	//Pseudo code doesn't specify how to intialize these
-	c.cwnd = initCwnd
+	c.initCwnd = float32(pktsz) * 10
+	c.cwnd = c.initCwnd
 	c.ssthresh = 100
 	//not sure about what this value should be
 	c.cwnd_cnt = 0
@@ -74,7 +80,7 @@ func (c *Cubic) cubic_reset() {
 func (c *Cubic) Ack(ack uint32, RTT_TD time.Duration) {
 	RTT := float32(RTT_TD.Seconds())
 	newBytesAcked := float32(ack - c.lastAck)
-	no_of_acks := int(newBytesAcked / pktSize)
+	no_of_acks := int(newBytesAcked / c.pktSize)
 	for i := 0; i < no_of_acks; i++ {
 		if c.dMin <= 0 || RTT < c.dMin {
 			c.dMin = RTT
@@ -96,7 +102,7 @@ func (c *Cubic) Ack(ack uint32, RTT_TD time.Duration) {
 
 	log.WithFields(log.Fields{
 		"gotAck":      ack,
-		"currCwnd":    c.cwnd * pktSize,
+		"currCwnd":    c.cwnd * c.pktSize,
 		"currLastAck": c.lastAck,
 		"newlyAcked":  newBytesAcked,
 	}).Info("[cubic] got ack")
@@ -117,7 +123,7 @@ func (c *Cubic) Drop(ev ccpFlow.DropEvent) {
 		c.cwnd = c.cwnd * (1 - c.BETA)
 		c.ssthresh = c.cwnd
 	case ccpFlow.Complete:
-		c.cwnd = initCwnd
+		c.cwnd = c.initCwnd
 		c.cubic_reset()
 	default:
 		log.WithFields(log.Fields{
@@ -127,7 +133,7 @@ func (c *Cubic) Drop(ev ccpFlow.DropEvent) {
 	}
 
 	log.WithFields(log.Fields{
-		"currCwnd": c.cwnd * pktSize,
+		"currCwnd": c.cwnd * c.pktSize,
 		"event":    ev,
 	}).Info("[cubic] drop")
 
@@ -172,9 +178,9 @@ func (c *Cubic) cubic_tcp_friendliness() {
 }
 
 func (c *Cubic) notifyCwnd() {
-	err := c.ipc.SendCwndMsg(c.sockid, uint32(c.cwnd*pktSize))
+	err := c.ipc.SendCwndMsg(c.sockid, uint32(c.cwnd*c.pktSize))
 	if err != nil {
-		log.WithFields(log.Fields{"cwnd": c.cwnd * pktSize, "name": c.sockid}).Warn(err)
+		log.WithFields(log.Fields{"cwnd": c.cwnd * c.pktSize, "name": c.sockid}).Warn(err)
 	}
 }
 

@@ -9,18 +9,19 @@ import (
 	"zombiezen.com/go/capnproto2"
 )
 
-func makeCreateMsg(socketId uint32, alg string) (*capnp.Message, error) {
+func makeCreateMsg(socketId uint32, startSeq uint32, alg string) (*capnp.Message, error) {
 	msg, seg, err := capnp.NewMessage(capnp.SingleSegment(nil))
 	if err != nil {
 		return nil, err
 	}
 
-	createMsg, err := capnpMsg.NewRootStrMsg(seg)
+	createMsg, err := capnpMsg.NewRootUIntStrMsg(seg)
 	if err != nil {
 		return nil, err
 	}
 
 	createMsg.SetSocketId(socketId)
+	createMsg.SetNumUInt32(startSeq)
 	createMsg.SetVal(alg)
 	createMsg.SetType(capnpMsg.MsgType_create)
 
@@ -34,7 +35,7 @@ func (c *CreateMsg) readCreateMsg(msg *capnp.Message) (err error) {
 		}
 	}()
 
-	createMsg, err := capnpMsg.ReadRootStrMsg(msg)
+	createMsg, err := capnpMsg.ReadRootUIntStrMsg(msg)
 	if err != nil {
 		return err
 	}
@@ -43,12 +44,14 @@ func (c *CreateMsg) readCreateMsg(msg *capnp.Message) (err error) {
 		return fmt.Errorf("Message not of type Create: %v", createMsg.Type())
 	}
 
+	stSq := createMsg.NumUInt32()
 	alg, err := createMsg.Val()
 	if err != nil {
 		return err
 	}
 
 	c.socketId = createMsg.SocketId()
+	c.startSeq = stSq
 	c.congAlg = alg
 	return nil
 }

@@ -46,7 +46,7 @@ func TestEncodeCwndMsg(t *testing.T) {
 func TestEncodeCreateMsg(t *testing.T) {
 	sk := New()
 	crMsg := sk.GetCreateMsg()
-	crMsg.New(6, "foo")
+	crMsg.New(6, 0, "foo")
 
 	buf, err := crMsg.Serialize()
 	if err != nil {

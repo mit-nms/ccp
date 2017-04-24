@@ -22,6 +22,60 @@ func readType(b []byte) (m msgType, err error) {
 	return
 }
 
+// (uint32, uint32, string) serialized format
+// ----------------------------------------------------------
+// | Msg Type | Len (B)  | Uint32    | Uint32    |  String  |
+// | (1 B)    | (1 B)    | (32 bits) | (32 bits) |(variable)|
+// ----------------------------------------------------------
+func writeUInt32AndUInt32AndString(
+	typ msgType,
+	i uint32,
+	j uint32,
+	str string,
+) ([]byte, error) {
+	buf := new(bytes.Buffer)
+
+	binary.Write(buf, binary.LittleEndian, uint8(typ))
+
+	if len(str) > 246 {
+		return []byte{}, fmt.Errorf("max string length 246: %s", str)
+	}
+
+	binary.Write(buf, binary.LittleEndian, uint8(len(str)+10))
+
+	binary.Write(buf, binary.LittleEndian, i)
+	binary.Write(buf, binary.LittleEndian, j)
+	binary.Write(buf, binary.LittleEndian, []byte(str))
+
+	return buf.Bytes(), nil
+}
+
+func readUInt32AndUInt32AndString(b []byte) (
+	typ msgType,
+	i uint32,
+	j uint32,
+	strn string,
+) {
+	buf := bytes.NewBuffer(b)
+	var msgLen uint8
+	var str []byte
+
+	binary.Read(buf, binary.LittleEndian, &typ)
+	binary.Read(buf, binary.LittleEndian, &msgLen)
+	str = make([]byte, msgLen-10)
+	binary.Read(buf, binary.LittleEndian, &i)
+	binary.Read(buf, binary.LittleEndian, &j)
+	binary.Read(buf, binary.LittleEndian, &str)
+
+	// remove null terminator
+	if str[len(str)-1] == byte(0) {
+		str = str[:len(str)-1]
+	}
+	strn = string(str)
+
+	return
+}
+
 // (uint32, string) serialized format
 // -----------------------------------------------
 // | Msg Type | Len (B)  | Uint32    | String    |

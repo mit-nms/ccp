@@ -9,12 +9,11 @@ import (
 	log "github.com/Sirupsen/logrus"
 )
 
-const pktSize = 1462
-const initCwnd = pktSize * 5
-
 // implement ccpFlow.Flow interface
 type Vegas struct {
-	// state
+	pktSize  float32
+	initCwnd float32
+
 	cwnd    float32
 	lastAck uint32
 
@@ -29,11 +28,17 @@ func (v *Vegas) Name() string {
 	return "vegas"
 }
 
-func (v *Vegas) Create(socketid uint32, send ipc.SendOnly) {
+func (v *Vegas) Create(socketid uint32, send ipc.SendOnly, pktsz uint32, startSeq uint32) {
 	v.sockid = socketid
-	v.lastAck = 0
-	v.cwnd = initCwnd
 	v.ipc = send
+	v.pktSize = float32(pktsz)
+	if startSeq == 0 {
+		v.lastAck = startSeq
+	} else {
+		v.lastAck = startSeq - 1
+	}
+	v.initCwnd = float32(pktsz * 10)
+	v.cwnd = v.initCwnd
 	v.baseRTT = 0
 	v.alpha = 2
 	v.beta = 4
@@ -46,11 +51,11 @@ func (v *Vegas) Ack(ack uint32, RTT_TD time.Duration) {
 	}
 	newBytesAcked := float32(ack - v.lastAck)
 
-	inQueue := (v.cwnd * (RTT - v.baseRTT)) / (RTT * pktSize)
+	inQueue := (v.cwnd * (RTT - v.baseRTT)) / (RTT * v.pktSize)
 	if inQueue <= v.alpha {
-		v.cwnd += pktSize
+		v.cwnd += v.pktSize
 	} else if inQueue >= v.beta {
-		v.cwnd -= pktSize
+		v.cwnd -= v.pktSize
 	}
 
 	v.notifyCwnd()
@@ -71,9 +76,9 @@ func (v *Vegas) Ack(ack uint32, RTT_TD time.Duration) {
 func (v *Vegas) Drop(ev ccpFlow.DropEvent) {
 	switch ev {
 	case ccpFlow.Isolated:
-		v.cwnd -= pktSize
+		v.cwnd -= v.pktSize
 	case ccpFlow.Complete:
-		v.cwnd -= pktSize
+		v.cwnd -= v.pktSize
 	default:
 		log.WithFields(log.Fields{
 			"event": ev,

@@ -56,8 +56,9 @@ func handleDrop(dr ipcbackend.DropMsg) {
 
 func handleCreate(cr ipcbackend.CreateMsg) {
 	log.WithFields(log.Fields{
-		"flowid": cr.SocketId(),
-		"alg":    cr.CongAlg(),
+		"flowid":   cr.SocketId(),
+		"startseq": cr.StartSeq(),
+		"alg":      cr.CongAlg(),
 	}).Info("handleCreate")
 	if _, ok := flows[cr.SocketId()]; ok {
 		log.WithFields(log.Fields{"flowid": cr.SocketId()}).Error("Creating already created flow")
@@ -81,6 +82,12 @@ func handleCreate(cr ipcbackend.CreateMsg) {
 		log.WithFields(log.Fields{"flowid": cr.SocketId()}).Error("Error creating ccp->socket ipc channel for flow")
 	}
 
-	f.Create(cr.SocketId(), ipCh)
+	switch dp {
+	case ipc.UDP:
+		f.Create(cr.SocketId(), ipCh, 1462, cr.StartSeq())
+	case ipc.KERNEL:
+		f.Create(cr.SocketId(), ipCh, 1460, cr.StartSeq())
+	}
+
 	flows[cr.SocketId()] = f
 }

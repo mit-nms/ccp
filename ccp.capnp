@@ -16,6 +16,13 @@ struct UIntMsg {
     val @2 :UInt32;
 }
 
+struct UIntStrMsg {
+    type @0 :MsgType;
+    socketId @1 :UInt32;
+    numUInt32 @2 :UInt32;
+    val @3 :Text;
+}
+
 struct StrMsg {
     type @0 :MsgType;
     socketId @1 :UInt32;
