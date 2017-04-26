@@ -46,6 +46,9 @@ func testControl(nl ipcbackend.Backend, msgs chan ipcbackend.Msg) {
 
 			cwMsg := nl.GetCwndMsg()
 			cwMsg.New(ack.SocketId(), cwnd)
+
+			<-time.After(time.Second)
+
 			nl.SendMsg(cwMsg)
 			log.WithFields(log.Fields{
 				"sent": fmt.Sprintf("(%v, %v)", cwMsg.SocketId(), cwMsg.Cwnd()),
