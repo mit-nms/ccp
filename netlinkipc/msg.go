@@ -97,7 +97,7 @@ func (a *AckMsg) Deserialize(buf []byte) error {
 
 	a.socketId = sid
 	a.ackNo = ack
-	a.rtt = time.Duration(tm) * time.Nanosecond
+	a.rtt = time.Duration(tm>>3) * time.Microsecond
 
 	return nil
 }
