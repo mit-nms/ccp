@@ -27,7 +27,7 @@ func main() {
 }
 
 func testControl(nl ipcbackend.Backend, msgs chan ipcbackend.Msg) {
-	cwnd := uint32(10)
+	cwnd := uint32(10) * 1460
 	for msg := range msgs {
 		switch msg.(type) {
 		case ipcbackend.CreateMsg:
@@ -42,7 +42,7 @@ func testControl(nl ipcbackend.Backend, msgs chan ipcbackend.Msg) {
 				"cwnd": cwnd,
 			}).Info("rcvd ack")
 
-			cwnd += 2
+			cwnd += 2 * 1460
 
 			cwMsg := nl.GetCwndMsg()
 			cwMsg.New(ack.SocketId(), cwnd)
