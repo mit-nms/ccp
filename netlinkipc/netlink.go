@@ -123,11 +123,14 @@ func (n *NetlinkIpc) listen() {
 			log.WithFields(log.Fields{
 				"where": "netlinkipc.listen",
 			}).Warn(err)
-			return
+			continue
 		}
 
 		for _, msg := range msgs {
-			n.listenCh <- msg.Data
+			select {
+			case n.listenCh <- msg.Data:
+			default: // ok to drop messages
+			}
 		}
 	}
 }
