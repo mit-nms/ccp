@@ -1,6 +1,7 @@
 package unixsocket
 
 import (
+	"fmt"
 	"net"
 	"os"
 
@@ -136,7 +137,13 @@ func (s *SocketIpc) Listen() chan ipcbackend.Msg {
 				close(msgCh)
 				return
 			case buf := <-s.listenCh:
-				m := parse(buf)
+				m, err := parse(buf)
+				if err != nil {
+					log.WithFields(log.Fields{
+						"received": buf,
+					}).Warn(err)
+					continue
+				}
 				msgCh <- m
 			}
 		}
@@ -184,29 +191,26 @@ func (s *SocketIpc) listen() {
 	}
 }
 
-func parse(buf []byte) ipcbackend.Msg {
+func parse(buf []byte) (ipcbackend.Msg, error) {
 	akMsg := &AckMsg{}
 	if err := akMsg.Deserialize(buf); err == nil {
-		return akMsg
+		return akMsg, nil
 	}
 
 	cwMsg := &CwndMsg{}
 	if err := cwMsg.Deserialize(buf); err == nil {
-		return cwMsg
+		return cwMsg, nil
 	}
 
 	drMsg := &DropMsg{}
 	if err := drMsg.Deserialize(buf); err == nil {
-		return drMsg
+		return drMsg, nil
 	}
 
 	crMsg := &CreateMsg{}
 	if err := crMsg.Deserialize(buf); err == nil {
-		return crMsg
+		return crMsg, nil
 	}
 
-	log.WithFields(log.Fields{
-		"received": buf,
-	}).Panic("received msg doesn't match any type")
-	return nil
+	return nil, fmt.Errorf("received msg doesn't match any type")
 }
