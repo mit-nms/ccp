@@ -18,7 +18,13 @@ func TestEncodeAckMsg(t *testing.T) {
 		return
 	}
 
-	decMsg := parse(buf).(ipcbackend.AckMsg)
+	msg, err := parse(buf)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	decMsg := msg.(ipcbackend.AckMsg)
 	if decMsg.SocketId() != 4 || decMsg.AckNo() != 42 {
 		t.Errorf("wrong message\ngot (%v, %v)\nexpected (%v, %v)", decMsg.SocketId(), decMsg.AckNo(), 4, 42)
 		return
@@ -36,7 +42,13 @@ func TestEncodeCwndMsg(t *testing.T) {
 		return
 	}
 
-	decMsg := parse(buf).(ipcbackend.CwndMsg)
+	msg, err := parse(buf)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	decMsg := msg.(ipcbackend.CwndMsg)
 	if decMsg.SocketId() != 5 || decMsg.Cwnd() != 52 {
 		t.Errorf("wrong message\ngot (%v, %v)\nexpected (%v, %v)", decMsg.SocketId(), decMsg.Cwnd(), 5, 52)
 		return
@@ -54,7 +66,13 @@ func TestEncodeCreateMsg(t *testing.T) {
 		return
 	}
 
-	decMsg := parse(buf).(ipcbackend.CreateMsg)
+	msg, err := parse(buf)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	decMsg := msg.(ipcbackend.CreateMsg)
 	if decMsg.SocketId() != 6 || decMsg.CongAlg() != "foo" {
 		t.Errorf("wrong message\ngot (%v, %v)\nexpected (%v, %v)", decMsg.SocketId(), decMsg.CongAlg(), 6, "foo")
 		return
@@ -72,7 +90,13 @@ func TestEncodeDropMsg(t *testing.T) {
 		return
 	}
 
-	decMsg := parse(buf).(ipcbackend.DropMsg)
+	msg, err := parse(buf)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	decMsg := msg.(ipcbackend.DropMsg)
 	if decMsg.SocketId() != 7 || decMsg.Event() != "bar" {
 		t.Errorf("wrong message\ngot (%v, %v)\nexpected (%v, %v)", decMsg.SocketId(), decMsg.Event(), 7, "bar")
 		return
