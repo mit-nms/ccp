@@ -110,7 +110,10 @@ func (sock *Sock) tx() {
 
 func (sock *Sock) doTx() {
 	sent := false
-	for sock.inFlight.size() < sock.cwnd {
+	sock.mux.Lock()
+	cwnd := sock.cwnd
+	sock.mux.Unlock()
+	for sock.inFlight.size() < cwnd {
 		pkt, err := sock.nextPacket()
 		if err != nil {
 			log.WithFields(log.Fields{
@@ -129,8 +132,8 @@ func (sock *Sock) doTx() {
 			"seqNo":         pkt.SeqNo,
 			"ackNo":         pkt.AckNo,
 			"length":        pkt.Length,
-			"inFlight":      sock.inFlight.order,
-			"cwnd":          sock.cwnd,
+			"inFlight":      sock.inFlight.getOrder(),
+			"cwnd":          cwnd,
 		}).Info("sent packet")
 	}
 

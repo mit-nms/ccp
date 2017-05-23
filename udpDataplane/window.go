@@ -20,6 +20,15 @@ type window struct {
 	order []uint32
 }
 
+func (w *window) getOrder() (ord []uint32) {
+	w.mux.Lock()
+	defer w.mux.Unlock()
+
+	ord = make([]uint32, len(w.order))
+	copy(ord, w.order)
+	return
+}
+
 func makeWindow() *window {
 	return &window{
 		pkts:  make(map[uint32]windowEntry),

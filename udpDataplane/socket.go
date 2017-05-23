@@ -163,7 +163,7 @@ func makeConnServer(ip string, port string) (connCh chan *net.UDPConn, err error
 	go func() {
 		log.Info("Listening for SYN")
 		syn := &Packet{}
-		conn, err = packetops.ListenForSyn(conn, addr, syn)
+		conn, err := packetops.ListenForSyn(conn, addr, syn)
 		if err != nil {
 			log.WithFields(log.Fields{
 				"ip":   ip,
@@ -278,8 +278,10 @@ func (sock *Sock) Write(b []byte) (chan uint32, error) {
 		return sock.ackedData, fmt.Errorf("Write exceeded buffer: %d > %d", len(b), len(sock.writeBuf))
 	}
 
+	sock.mux.Lock()
 	copy(sock.writeBuf, b)
 	sock.writeBufPos = len(b)
+	sock.mux.Unlock()
 	select {
 	case sock.shouldTx <- struct{}{}:
 	case <-sock.closed:
@@ -338,6 +340,7 @@ func (sock *Sock) Read(returnGranularity uint32) chan []byte {
 }
 
 func (sock *Sock) Fin() error {
+	sock.mux.Lock()
 	pkt := &Packet{
 		SeqNo:   sock.nextSeqNo,
 		AckNo:   sock.lastAck,
@@ -345,6 +348,7 @@ func (sock *Sock) Fin() error {
 		Length:  0,
 		Payload: []byte{},
 	}
+	sock.mux.Unlock()
 	packetops.SendPacket(sock.conn, pkt, 0)
 	return sock.Close()
 }
