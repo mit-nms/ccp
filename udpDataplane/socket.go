@@ -56,24 +56,161 @@ type Sock struct {
 // create and connect a socket.
 // if ip == "", will listen on port until a SYN arrives
 // else, will send a SYN to ip:port to establish a connection
-func Socket(ip string, port string, name string) (*Sock, error) {
+func Socket(ip string, port string, name string) (s *Sock, err error) {
+	s = <-socketNonBlocking(ip, port, name)
+	if s == nil {
+		err = fmt.Errorf("could not create socket")
+	}
+
+	return
+}
+
+func socketNonBlocking(ip string, port string, name string) (ch chan *Sock) {
 	log.WithFields(log.Fields{
 		"ip":   ip,
 		"port": port,
 	}).Info("creating socket...")
 
-	conn, err := makeConn(ip, port)
+	ch = make(chan *Sock)
+	if ip != "" {
+		conn, err := makeConnClient(ip, port)
+		if err != nil {
+			log.WithFields(log.Fields{
+				"ip":   ip,
+				"port": port,
+				"name": name,
+				"err":  err,
+			}).Warn("makeConnClient failed")
+			goto fail
+		}
+
+		sk, err := mkSocket(conn, name)
+		if err != nil {
+			log.WithFields(log.Fields{
+				"ip":   ip,
+				"port": port,
+				"name": name,
+				"err":  err,
+			}).Warn("mkSocket failed")
+			goto fail
+		}
+
+		log.WithFields(log.Fields{
+			"ip":   ip,
+			"port": port,
+			"name": name,
+		}).Info("created socket!")
+
+		go func() { ch <- sk }()
+		return
+	} else {
+		connCh, err := makeConnServer(ip, port)
+		if err != nil {
+			log.WithFields(log.Fields{
+				"ip":   ip,
+				"port": port,
+				"name": name,
+				"err":  err,
+			}).Warn("makeConnServer failed")
+			goto fail
+		}
+
+		go func() {
+			conn := <-connCh
+			if conn == nil {
+				ch <- nil
+				return
+			}
+
+			log.WithFields(log.Fields{
+				"ip":   ip,
+				"port": port,
+				"name": name,
+			}).Info("created socket!")
+
+			sk, err := mkSocket(conn, name)
+			if err != nil {
+				log.WithFields(log.Fields{
+					"ip":   ip,
+					"port": port,
+					"name": name,
+					"err":  err,
+				}).Warn("mkSocket failed")
+				ch <- nil
+				return
+			}
+
+			ch <- sk
+		}()
+		return
+	}
+
+fail:
+	go func() {
+		ch <- nil
+	}()
+	return ch
+}
+
+func makeConnServer(ip string, port string) (connCh chan *net.UDPConn, err error) {
+	conn, addr, err := packetops.SetupListeningSock(port)
 	if err != nil {
 		return nil, err
 	}
 
-	log.WithFields(log.Fields{
-		"ip":   ip,
-		"port": port,
-		"name": name,
-	}).Info("created socket!")
+	connCh = make(chan *net.UDPConn)
 
-	return mkSocket(conn, name)
+	go func() {
+		log.Info("Listening for SYN")
+		syn := &Packet{}
+		conn, err = packetops.ListenForSyn(conn, addr, syn)
+		if err != nil {
+			log.WithFields(log.Fields{
+				"ip":   ip,
+				"port": port,
+				"err":  err,
+			}).Warn("makeConnServer failed")
+			connCh <- nil
+			return
+		}
+
+		syn.Flag = SYNACK
+		syn.AckNo = 1
+
+		log.Info("Sending SYNACK")
+		err = packetops.SendSyn(conn, syn)
+		if err != nil {
+			log.WithFields(log.Fields{
+				"ip":   ip,
+				"port": port,
+				"err":  err,
+			}).Warn("makeConnServer failed")
+			connCh <- nil
+			return
+		}
+
+		connCh <- conn
+	}()
+
+	return
+}
+
+func makeConnClient(ip string, port string) (conn *net.UDPConn, err error) {
+	var addr *net.UDPAddr
+	conn, addr, err = packetops.SetupClientSock(ip, port)
+	if err != nil {
+		return nil, err
+	}
+
+	syn := &Packet{
+		SeqNo: 0,
+		AckNo: 0,
+		Flag:  SYN,
+	}
+
+	log.Info("Sending SYN and expecting ACK")
+	packetops.SynAckExchange(conn, addr, syn)
+	return
 }
 
 func mkSocket(conn *net.UDPConn, name string) (*Sock, error) {
@@ -133,49 +270,6 @@ func mkSocket(conn *net.UDPConn, name string) (*Sock, error) {
 	go s.tx()
 
 	return s, nil
-}
-
-func makeConn(ip string, port string) (conn *net.UDPConn, err error) {
-	var addr *net.UDPAddr
-
-	if ip != "" {
-		conn, addr, err = packetops.SetupClientSock(ip, port)
-		if err != nil {
-			return nil, err
-		}
-
-		syn := &Packet{
-			SeqNo: 0,
-			AckNo: 0,
-			Flag:  SYN,
-		}
-
-		log.Info("Sending SYN and expecting ACK")
-		packetops.SynAckExchange(conn, addr, syn)
-	} else {
-		conn, addr, err = packetops.SetupListeningSock(port)
-		if err != nil {
-			return nil, err
-		}
-
-		log.Info("Listening for SYN")
-		syn := &Packet{}
-		conn, err = packetops.ListenForSyn(conn, addr, syn)
-		if err != nil {
-			return nil, err
-		}
-
-		syn.Flag = SYNACK
-		syn.AckNo = 1
-
-		log.Info("Sending SYNACK")
-		err := packetops.SendSyn(conn, syn)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	return
 }
 
 // currently only supports writing once

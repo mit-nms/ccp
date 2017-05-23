@@ -2,8 +2,15 @@ package udpDataplane
 
 import (
 	"bytes"
+	"fmt"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
+
+	"ccp/ccpFlow"
+	"ccp/ipc"
+	"ccp/reno"
 
 	log "github.com/Sirupsen/logrus"
 )
@@ -47,12 +54,12 @@ func BenchmarkDoRx(b *testing.B) {
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		doBenchmark(s)
+		doBenchmarkRx(s)
 		s.inFlight = makeWindow()
 	}
 }
 
-func doBenchmark(s *Sock) {
+func doBenchmarkRx(s *Sock) {
 	// check sender side (receiving acks)
 	s.inFlight.addPkt(time.Now(), &Packet{
 		SeqNo:   uint32(1460),
@@ -68,4 +75,157 @@ func doBenchmark(s *Sock) {
 		Flag:   ACK,
 		Length: 0,
 	})
+}
+
+func BenchmarkSocket(b *testing.B) {
+	b.SetBytes(1e6)
+	for i := 0; i < b.N; i++ {
+		kill := make(chan interface{})
+		ready := make(chan interface{})
+		go renoCcp(kill, ready)
+		<-ready
+		log.Debug("ccp ready")
+		go server(kill, ready)
+		<-ready
+		done := make(chan interface{})
+		go client(done)
+		<-done
+		close(kill)
+	}
+}
+
+// from ccp/ccp.go
+func renoCcp(killed chan interface{}, ready chan interface{}) {
+	com, err := ipc.SetupCcpListen(ipc.UDP)
+	if err != nil {
+		log.Error(err)
+		return
+	}
+
+	ackCh, err := com.ListenAckMsg()
+	if err != nil {
+		log.Error(err)
+		return
+	}
+
+	dropCh, err := com.ListenDropMsg()
+	if err != nil {
+		log.Error(err)
+		return
+	}
+
+	createCh, err := com.ListenCreateMsg()
+	if err != nil {
+		log.Error(err)
+		return
+	}
+
+	ready <- struct{}{}
+
+	r := &reno.Reno{}
+	for {
+		select {
+		case <-killed:
+			return
+		case cr := <-createCh:
+			log.Info("got create")
+			ipCh, err := ipc.SetupCcpSend(ipc.UDP, cr.SocketId())
+			if err != nil {
+				log.WithFields(log.Fields{"flowid": cr.SocketId()}).Error("Error creating ccp->socket ipc channel for flow")
+			}
+			r.Create(40000, ipCh, 1462, 0)
+		case ack := <-ackCh:
+			log.Info("got ack")
+			r.Ack(ack.AckNo(), ack.Rtt())
+		case dr := <-dropCh:
+			log.Info("got drop")
+			r.Drop(ccpFlow.DropEvent(dr.Event()))
+		}
+	}
+}
+
+// from test/testServer/server.go
+func server(killed chan interface{}, ready chan interface{}) {
+	sockCh := socketNonBlocking("", "40000", "SERVER")
+	ready <- struct{}{}
+	sock := <-sockCh
+
+	rcvd := sock.Read(1)
+	rb := <-rcvd
+	req := strings.Split(string(rb), " ")
+	if len(req) != 3 || req[0] != "testRequest:" || req[1] != "size" {
+		log.WithFields(log.Fields{
+			"got":      rb,
+			"expected": "'test request: size {x}'",
+		}).Warn("malformed request")
+	}
+
+	sz, err := strconv.Atoi(req[2])
+	if err != nil {
+		log.Error(err)
+		return
+	}
+
+	log.WithFields(log.Fields{
+		"req": string(rb),
+	}).Info("got req")
+
+	resp := bytes.Repeat([]byte("test response\n"), sz/14)
+	sent, err := sock.Write(resp)
+	if err != nil {
+		log.Error(err)
+		return
+	}
+
+	log.WithFields(log.Fields{
+		"len":       len(resp),
+		"asked len": sz,
+	}).Info("started write")
+
+	for a := range sent {
+		select {
+		case <-killed:
+			return
+		default:
+		}
+
+		log.WithFields(log.Fields{
+			"ack":   a,
+			"total": len(resp),
+		}).Info("server acked")
+	}
+}
+
+// from test/testClient/client.go
+func client(done chan interface{}) {
+	size := int(1e6)
+	sock, err := Socket("127.0.0.1", "40000", "CLIENT")
+	if err != nil {
+		log.Error(err)
+		return
+	}
+
+	req := []byte(fmt.Sprintf("testRequest: size %d", size))
+	_, err = sock.Write(req)
+	if err != nil {
+		log.Error(err)
+		return
+	}
+
+	response := new(bytes.Buffer)
+	rcvd := sock.Read(100)
+	for rb := range rcvd {
+		response.Write(rb)
+		if response.Len() >= size-13 {
+			break
+		}
+	}
+
+	log.WithFields(log.Fields{
+		"got": response.Len(),
+	}).Info("done")
+
+	sock.Fin()
+
+	done <- struct{}{}
 }
