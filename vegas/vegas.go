@@ -75,9 +75,9 @@ func (v *Vegas) Ack(ack uint32, RTT_TD time.Duration) {
 
 func (v *Vegas) Drop(ev ccpFlow.DropEvent) {
 	switch ev {
-	case ccpFlow.Isolated:
+	case ccpFlow.DupAck:
 		v.cwnd -= v.pktSize
-	case ccpFlow.Complete:
+	case ccpFlow.Timeout:
 		v.cwnd -= v.pktSize
 	default:
 		log.WithFields(log.Fields{

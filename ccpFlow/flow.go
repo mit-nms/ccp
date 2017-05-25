@@ -9,8 +9,9 @@ import (
 
 type DropEvent string
 
-var Isolated DropEvent = DropEvent("isolated")
-var Complete DropEvent = DropEvent("complete")
+var DupAck DropEvent = DropEvent("dupack")
+var Timeout DropEvent = DropEvent("timeout")
+var Ecn DropEvent = DropEvent("ecn")
 
 type Flow interface {
 	Name() string // Name returns a string identifying the CC algorithm

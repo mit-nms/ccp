@@ -169,7 +169,7 @@ func (c *DropMsg) Serialize() ([]byte, error) {
 func (c *DropMsg) Deserialize(buf []byte) error {
 	t, sid, ev := readUInt32AndString(buf)
 	if t != DROP {
-		return fmt.Errorf("not a create message: %d", t)
+		return fmt.Errorf("not a drop message: %d", t)
 	}
 
 	c.socketId = sid

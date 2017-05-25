@@ -56,7 +56,7 @@ func TestReno(t *testing.T) {
 	}
 
 	t.Log("isolated drop")
-	f.Drop(ccpFlow.Isolated)
+	f.Drop(ccpFlow.DupAck)
 	c = <-ipcMockCh
 	if c != 21930 {
 		t.Errorf("expected cwnd 21930, got %d", c)
@@ -64,7 +64,7 @@ func TestReno(t *testing.T) {
 	}
 
 	t.Log("complete drop")
-	f.Drop(ccpFlow.Complete)
+	f.Drop(ccpFlow.Timeout)
 	c = <-ipcMockCh
 	if c != 14620 {
 		t.Errorf("expected cwnd 14620, got %d", c)

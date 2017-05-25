@@ -63,12 +63,12 @@ func (r *Reno) Ack(ack uint32, rtt time.Duration) {
 
 func (r *Reno) Drop(ev ccpFlow.DropEvent) {
 	switch ev {
-	case ccpFlow.Isolated:
+	case ccpFlow.DupAck:
 		r.cwnd /= 2
 		if r.cwnd < r.initCwnd {
 			r.cwnd = r.initCwnd
 		}
-	case ccpFlow.Complete:
+	case ccpFlow.Timeout:
 		r.cwnd = r.initCwnd
 	default:
 		log.WithFields(log.Fields{

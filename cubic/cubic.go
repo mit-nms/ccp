@@ -113,7 +113,7 @@ func (c *Cubic) Ack(ack uint32, RTT_TD time.Duration) {
 
 func (c *Cubic) Drop(ev ccpFlow.DropEvent) {
 	switch ev {
-	case ccpFlow.Isolated:
+	case ccpFlow.DupAck:
 		c.epoch_start = 0
 		if c.cwnd < c.Wlast_max && c.fast_convergence {
 			c.Wlast_max = c.cwnd * ((2 - c.BETA) / 2)
@@ -122,7 +122,7 @@ func (c *Cubic) Drop(ev ccpFlow.DropEvent) {
 		}
 		c.cwnd = c.cwnd * (1 - c.BETA)
 		c.ssthresh = c.cwnd
-	case ccpFlow.Complete:
+	case ccpFlow.Timeout:
 		c.cwnd = c.initCwnd
 		c.cubic_reset()
 	default:

@@ -129,9 +129,9 @@ func writeAckMsg(
 func writeDropMsg(name string, id uint32, out *ipc.Ipc, event string) {
 	switch event {
 	case "timeout":
-		event = string(ccpFlow.Complete)
+		event = string(ccpFlow.Timeout)
 	case "3xdupack":
-		event = string(ccpFlow.Isolated)
+		event = string(ccpFlow.DupAck)
 	default:
 		log.WithFields(log.Fields{
 			"event": event,
