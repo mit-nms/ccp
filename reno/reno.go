@@ -35,7 +35,7 @@ func (r *Reno) Create(
 	r.ipc = send
 	r.pktSize = pktsz
 	r.initCwnd = float32(pktsz * 10)
-	r.cwnd = r.initCwnd
+	r.cwnd = float32(pktsz * 1500)
 	if startSeq == 0 {
 		r.lastAck = startSeq
 	} else {
@@ -62,6 +62,7 @@ func (r *Reno) Ack(ack uint32, rtt time.Duration) {
 }
 
 func (r *Reno) Drop(ev ccpFlow.DropEvent) {
+	oldCwnd := r.cwnd
 	switch ev {
 	case ccpFlow.DupAck:
 		r.cwnd /= 2
@@ -78,6 +79,7 @@ func (r *Reno) Drop(ev ccpFlow.DropEvent) {
 	}
 
 	log.WithFields(log.Fields{
+		"oldCwnd":  oldCwnd,
 		"currCwnd": r.cwnd,
 		"event":    ev,
 	}).Info("[reno] drop")
