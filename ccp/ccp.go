@@ -13,6 +13,8 @@ import (
 )
 
 var datapath = flag.String("datapath", "udp", "which IPC backend to use (udp|kernel)")
+var overrideAlg = flag.String("congAlg", "nil", "override the datapath's requested congestion control algorithm for all flows (cubic|reno|vegas|nil)")
+var initCwnd = flag.Uint("initCwnd", 10, "override the default starting congestion window")
 
 var flows map[uint32]ccpFlow.Flow
 var dp ipc.Datapath
@@ -29,8 +31,11 @@ func main() {
 	flag.Parse()
 
 	log.WithFields(log.Fields{
-		"datapath": *datapath,
-	}).Warn("datapath")
+		"datapath":    *datapath,
+		"overrideAlg": *overrideAlg,
+		"startCwnd":   *initCwnd,
+	}).Info("parsed flags")
+
 	switch *datapath {
 	case "udp":
 		dp = ipc.UDP

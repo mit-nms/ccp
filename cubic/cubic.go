@@ -48,14 +48,15 @@ func (c *Cubic) Create(
 	send ipc.SendOnly,
 	pktsz uint32,
 	startSeq uint32,
+	startCwnd uint32,
 ) {
 	c.sockid = socketid
 	c.pktSize = float32(pktsz)
 	c.lastAck = 0
 	c.ipc = send
 	//Pseudo code doesn't specify how to intialize these
-	c.initCwnd = float32(pktsz) * 10
-	c.cwnd = c.initCwnd
+	c.initCwnd = float32(pktsz * 10)
+	c.cwnd = float32(pktsz * startCwnd)
 	c.ssthresh = 100
 	//not sure about what this value should be
 	c.cwnd_cnt = 0

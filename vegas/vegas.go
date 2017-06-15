@@ -28,7 +28,13 @@ func (v *Vegas) Name() string {
 	return "vegas"
 }
 
-func (v *Vegas) Create(socketid uint32, send ipc.SendOnly, pktsz uint32, startSeq uint32) {
+func (v *Vegas) Create(
+	socketid uint32,
+	send ipc.SendOnly,
+	pktsz uint32,
+	startSeq uint32,
+	startCwnd uint32,
+) {
 	v.sockid = socketid
 	v.ipc = send
 	v.pktSize = float32(pktsz)
@@ -38,7 +44,7 @@ func (v *Vegas) Create(socketid uint32, send ipc.SendOnly, pktsz uint32, startSe
 		v.lastAck = startSeq - 1
 	}
 	v.initCwnd = float32(pktsz * 10)
-	v.cwnd = v.initCwnd
+	v.cwnd = float32(pktsz * startCwnd)
 	v.baseRTT = 0
 	v.alpha = 2
 	v.beta = 4

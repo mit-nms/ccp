@@ -36,7 +36,7 @@ func TestReno(t *testing.T) {
 
 	ipcMockCh := make(chan uint32)
 	mockIpc := &MockSendOnly{ch: ipcMockCh}
-	f.Create(42, mockIpc, 1462, 0)
+	f.Create(42, mockIpc, 1462, 0, 10)
 
 	if f.(*Reno).lastAck != 0 || f.(*Reno).sockid != 42 {
 		t.Errorf("got \"%v\", expected lastAck=0 and sockid=42", f)

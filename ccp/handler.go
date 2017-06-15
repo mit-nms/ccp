@@ -65,9 +65,27 @@ func handleCreate(cr ipcbackend.CreateMsg) {
 		return
 	}
 
-	f, err := ccpFlow.GetFlow(cr.CongAlg())
+	var f ccpFlow.Flow
+	var err error
+	if *overrideAlg != "nil" {
+		f, err = ccpFlow.GetFlow(*overrideAlg)
+		if err != nil {
+			log.WithFields(log.Fields{
+				"datapath request": cr.CongAlg(),
+				"override request": *overrideAlg,
+				"error":            err,
+			}).Warn("Unknown flow type, trying datapath request")
+		} else {
+			goto gotFlow
+		}
+	}
+
+	f, err = ccpFlow.GetFlow(cr.CongAlg())
 	if err != nil {
-		log.WithFields(log.Fields{"alg": cr.CongAlg()}).Warn("Unknown flow type, using reno")
+		log.WithFields(log.Fields{
+			"alg":   cr.CongAlg(),
+			"error": err,
+		}).Warn("Unknown flow type, using reno")
 		f, err = ccpFlow.GetFlow("reno")
 		if err != nil {
 			log.WithFields(log.Fields{
@@ -77,6 +95,7 @@ func handleCreate(cr ipcbackend.CreateMsg) {
 		}
 	}
 
+gotFlow:
 	ipCh, err := ipc.SetupCcpSend(dp, cr.SocketId())
 	if err != nil {
 		log.WithFields(log.Fields{"flowid": cr.SocketId()}).Error("Error creating ccp->socket ipc channel for flow")
@@ -84,9 +103,9 @@ func handleCreate(cr ipcbackend.CreateMsg) {
 
 	switch dp {
 	case ipc.UDP:
-		f.Create(cr.SocketId(), ipCh, 1462, cr.StartSeq())
+		f.Create(cr.SocketId(), ipCh, 1462, cr.StartSeq(), uint32(*initCwnd))
 	case ipc.KERNEL:
-		f.Create(cr.SocketId(), ipCh, 1460, cr.StartSeq())
+		f.Create(cr.SocketId(), ipCh, 1460, cr.StartSeq(), uint32(*initCwnd))
 	}
 
 	flows[cr.SocketId()] = f

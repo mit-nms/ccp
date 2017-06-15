@@ -30,12 +30,13 @@ func (r *Reno) Create(
 	send ipc.SendOnly,
 	pktsz uint32,
 	startSeq uint32,
+	startCwnd uint32,
 ) {
 	r.sockid = socketid
 	r.ipc = send
 	r.pktSize = pktsz
 	r.initCwnd = float32(pktsz * 10)
-	r.cwnd = float32(pktsz * 1500)
+	r.cwnd = float32(pktsz * startCwnd)
 	if startSeq == 0 {
 		r.lastAck = startSeq
 	} else {

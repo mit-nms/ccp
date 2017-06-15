@@ -133,7 +133,7 @@ func renoCcp(killed chan interface{}, ready chan interface{}) {
 			if err != nil {
 				log.WithFields(log.Fields{"flowid": cr.SocketId()}).Error("Error creating ccp->socket ipc channel for flow")
 			}
-			r.Create(40000, ipCh, 1462, 0)
+			r.Create(40000, ipCh, 1462, 0, 10)
 		case ack := <-ackCh:
 			log.Info("got ack")
 			r.Ack(ack.AckNo(), ack.Rtt())

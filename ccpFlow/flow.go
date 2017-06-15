@@ -21,6 +21,7 @@ type Flow interface {
 		send ipc.SendOnly,
 		pktsz uint32,
 		startSeq uint32,
+		initCwnd uint32,
 	)
 	Ack(ack uint32, rtt time.Duration) // Ack: callback for when an ack is received
 	Drop(event DropEvent)              // Drop: callback for drop event
