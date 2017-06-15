@@ -4,6 +4,7 @@ import (
 	"flag"
 
 	"ccp/ccpFlow"
+	"ccp/cubic"
 	"ccp/ipc"
 	"ccp/reno"
 	"ccp/vegas"
@@ -13,15 +14,16 @@ import (
 
 var datapath = flag.String("datapath", "udp", "which IPC backend to use (udp|kernel)")
 
+var flows map[uint32]ccpFlow.Flow
+var dp ipc.Datapath
+
 func init() {
 	log.SetLevel(log.InfoLevel)
 	flows = make(map[uint32]ccpFlow.Flow)
+	cubic.Init()
 	vegas.Init()
 	reno.Init()
 }
-
-var flows map[uint32]ccpFlow.Flow
-var dp ipc.Datapath
 
 func main() {
 	flag.Parse()
