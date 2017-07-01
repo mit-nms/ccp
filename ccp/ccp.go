@@ -5,6 +5,7 @@ import (
     "time"
 
 	"ccp/ccpFlow"
+	"ccp/compound"
 	"ccp/cubic"
 	"ccp/ipc"
 	"ccp/reno"
@@ -26,6 +27,7 @@ func init() {
         TimestampFormat: time.RFC3339Nano,
     })
 	flows = make(map[uint32]ccpFlow.Flow)
+	compound.Init()
 	cubic.Init()
 	vegas.Init()
 	reno.Init()
