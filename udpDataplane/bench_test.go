@@ -102,7 +102,7 @@ func renoCcp(killed chan interface{}, ready chan interface{}) {
 		return
 	}
 
-	ackCh, err := com.ListenAckMsg()
+	ackCh, err := com.ListenMeasureMsg()
 	if err != nil {
 		log.Error(err)
 		return

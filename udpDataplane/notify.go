@@ -119,7 +119,7 @@ func writeAckMsg(
 	ack uint32,
 	rtt time.Duration,
 ) {
-	err := out.SendAckMsg(id, ack, rtt)
+	err := out.SendMeasureMsg(id, ack, rtt)
 	if err != nil {
 		log.WithFields(log.Fields{"ack": ack, "name": name, "id": id, "where": "notify.writeAckMsg"}).Warn(err)
 		return

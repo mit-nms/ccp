@@ -35,8 +35,8 @@ func testControl(nl ipcbackend.Backend, msgs chan ipcbackend.Msg) {
 			log.WithFields(log.Fields{
 				"got": fmt.Sprintf("(%v, %v)", cr.SocketId(), cr.CongAlg()),
 			}).Info("rcvd create")
-		case ipcbackend.AckMsg:
-			ack := msg.(ipcbackend.AckMsg)
+		case ipcbackend.MeasureMsg:
+			ack := msg.(ipcbackend.MeasureMsg)
 			log.WithFields(log.Fields{
 				"got":  fmt.Sprintf("(%v, %v, %v)", ack.SocketId(), ack.AckNo(), ack.Rtt()),
 				"cwnd": cwnd,
@@ -70,8 +70,8 @@ func logMsgs(msgs chan ipcbackend.Msg) {
 			log.WithFields(log.Fields{
 				"got": fmt.Sprintf("(%v, %v)", cr.SocketId(), cr.CongAlg()),
 			}).Info("rcvd create")
-		case ipcbackend.AckMsg:
-			ack := msg.(ipcbackend.AckMsg)
+		case ipcbackend.MeasureMsg:
+			ack := msg.(ipcbackend.MeasureMsg)
 			log.WithFields(log.Fields{
 				"got": fmt.Sprintf("(%v, %v, %v)", ack.SocketId(), ack.AckNo(), ack.Rtt()),
 			}).Info("rcvd ack")
@@ -135,8 +135,8 @@ func expectCreate(msg ipcbackend.Msg, sid uint32, alg string) error {
 
 func expectAck(msg ipcbackend.Msg, sid uint32, ackNo uint32, rtt time.Duration) error {
 	switch msg.(type) {
-	case ipcbackend.AckMsg:
-		ack := msg.(ipcbackend.AckMsg)
+	case ipcbackend.MeasureMsg:
+		ack := msg.(ipcbackend.MeasureMsg)
 		if ack.SocketId() == sid && ack.AckNo() == ackNo {
 			log.WithFields(log.Fields{
 				"got": fmt.Sprintf("(%v, %v, %v)", ack.SocketId(), ack.AckNo(), ack.Rtt()),

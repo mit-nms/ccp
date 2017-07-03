@@ -101,8 +101,8 @@ func (s *SocketIpc) GetCreateMsg() ipcbackend.CreateMsg {
 	return &CreateMsg{}
 }
 
-func (s *SocketIpc) GetAckMsg() ipcbackend.AckMsg {
-	return &AckMsg{}
+func (s *SocketIpc) GetMeasureMsg() ipcbackend.MeasureMsg {
+	return &MeasureMsg{}
 }
 
 func (s *SocketIpc) GetCwndMsg() ipcbackend.CwndMsg {
@@ -192,7 +192,7 @@ func (s *SocketIpc) listen() {
 }
 
 func parse(buf []byte) (ipcbackend.Msg, error) {
-	akMsg := &AckMsg{}
+	akMsg := &MeasureMsg{}
 	if err := akMsg.Deserialize(buf); err == nil {
 		return akMsg, nil
 	}

@@ -56,7 +56,7 @@ func (c *CreateMsg) readCreateMsg(msg *capnp.Message) (err error) {
 	return nil
 }
 
-func makeNotifyAckMsg(socketId uint32, ackNo uint32, rtt time.Duration) (*capnp.Message, error) {
+func makeNotifyMeasureMsg(socketId uint32, ackNo uint32, rtt time.Duration) (*capnp.Message, error) {
 	msg, seg, err := capnp.NewMessage(capnp.SingleSegment(nil))
 	if err != nil {
 		return nil, err
@@ -75,7 +75,7 @@ func makeNotifyAckMsg(socketId uint32, ackNo uint32, rtt time.Duration) (*capnp.
 	return msg, nil
 }
 
-func (a *AckMsg) readAckMsg(msg *capnp.Message) (err error) {
+func (a *MeasureMsg) readMeasureMsg(msg *capnp.Message) (err error) {
 	defer func() {
 		if panic := recover(); panic != nil {
 			err = panic.(error)

@@ -9,14 +9,14 @@ import (
 )
 
 func handleMsgs(
-	ackCh chan ipcbackend.AckMsg,
+	measureCh chan ipcbackend.MeasureMsg,
 	createCh chan ipcbackend.CreateMsg,
 	dropCh chan ipcbackend.DropMsg,
 ) {
 	for {
 		select {
-		case ack := <-ackCh:
-			handleAck(ack)
+		case m := <-measureCh:
+			handleMeasure(m)
 		case cr := <-createCh:
 			handleCreate(cr)
 		case dr := <-dropCh:
@@ -25,12 +25,12 @@ func handleMsgs(
 	}
 }
 
-func handleAck(ack ipcbackend.AckMsg) {
+func handleMeasure(ack ipcbackend.MeasureMsg) {
 	log.WithFields(log.Fields{
 		"flowid": ack.SocketId(),
 		"ackno":  ack.AckNo(),
 		"rtt":    ack.Rtt(),
-	}).Info("handleAck")
+	}).Info("handleMeasure")
 
 	if flow, ok := flows[ack.SocketId()]; !ok {
 		log.WithFields(log.Fields{"flowid": ack.SocketId()}).Warn("Unknown flow")

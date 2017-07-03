@@ -60,7 +60,7 @@ func reader(ready chan interface{}, done chan error) {
 	}
 
 	sk := New()
-	decMsg := sk.GetAckMsg()
+	decMsg := sk.GetMeasureMsg()
 	err = decMsg.Deserialize(buf)
 	if err != nil {
 		done <- err
@@ -97,8 +97,8 @@ func writer(ready chan interface{}, done chan error) {
 		out: out,
 	}
 
-	akMsg := s.GetAckMsg()
-	akMsg.New(4, 42, time.Duration(time.Millisecond))
+	akMsg := s.GetMeasureMsg()
+	akMsg.New(4, 42, time.Duration(time.Millisecond), 0, 0)
 
 	err = s.SendMsg(akMsg)
 	if err != nil {

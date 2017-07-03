@@ -12,11 +12,11 @@ import (
 
 func TestParse(t *testing.T) {
 	i := Ipc{
-		CreateNotify: make(chan ipcbackend.CreateMsg),
-		AckNotify:    make(chan ipcbackend.AckMsg),
-		CwndNotify:   make(chan ipcbackend.CwndMsg),
-		DropNotify:   make(chan ipcbackend.DropMsg),
-		backend:      unixsocket.New(),
+		CreateNotify:  make(chan ipcbackend.CreateMsg),
+		MeasureNotify: make(chan ipcbackend.MeasureMsg),
+		CwndNotify:    make(chan ipcbackend.CwndMsg),
+		DropNotify:    make(chan ipcbackend.DropMsg),
+		backend:       unixsocket.New(),
 	}
 
 	msgs := make(chan ipcbackend.Msg)
@@ -25,8 +25,8 @@ func TestParse(t *testing.T) {
 	createMsg := i.backend.GetCreateMsg()
 	createMsg.New(3, 0, "reno")
 
-	ackMsg := i.backend.GetAckMsg()
-	ackMsg.New(4, 568, time.Second)
+	ackMsg := i.backend.GetMeasureMsg()
+	ackMsg.New(4, 568, time.Second, 0, 0)
 
 	cwndMsg := i.backend.GetCwndMsg()
 	cwndMsg.New(5, 573)
@@ -36,7 +36,7 @@ func TestParse(t *testing.T) {
 
 	done := make(chan error)
 	go expectCreate(i, 3, "reno", done)
-	go expectAck(i, 4, 568, done)
+	go expectMeasure(i, 4, 568, done)
 	go expectCwnd(i, 5, 573, done)
 	go expectDrop(i, 6, "isolated", done)
 
@@ -61,8 +61,8 @@ func TestParse(t *testing.T) {
 	}
 }
 
-func expectAck(b Ipc, sid uint32, ack uint32, done chan error) {
-	ms, _ := b.ListenAckMsg()
+func expectMeasure(b Ipc, sid uint32, ack uint32, done chan error) {
+	ms, _ := b.ListenMeasureMsg()
 
 	m := <-ms
 	if m.SocketId() != sid || m.AckNo() != ack {

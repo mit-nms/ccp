@@ -5,12 +5,6 @@ import (
 	"time"
 )
 
-// Message serialized format
-// -----------------------------------------
-// | Msg Type | Len (B)  | Msg Specific...
-// | (1 B)    | (1 B)    |
-// -----------------------------------------
-
 type CreateMsg struct {
 	socketId uint32
 	startSeq uint32
@@ -36,69 +30,106 @@ func (c *CreateMsg) CongAlg() string {
 }
 
 func (c *CreateMsg) Serialize() ([]byte, error) {
-	return writeUInt32AndUInt32AndString(
-		CREATE,
-		c.socketId,
-		c.startSeq,
-		c.congAlg,
-	)
+	return msgWriter(nlmsg{
+		typ:      CREATE,
+		socketId: c.socketId,
+		u32s:     []uint32{c.startSeq},
+		u64s:     []uint64{},
+		str:      "",
+	})
 }
 
 func (c *CreateMsg) Deserialize(buf []byte) error {
-	t, sid, stSq, alg := readUInt32AndUInt32AndString(buf)
-	if t != CREATE {
-		return fmt.Errorf("not a create message: %d", t)
+	msg, err := msgReader(buf)
+	if err != nil {
+		return err
 	}
 
-	c.socketId = sid
-	c.startSeq = stSq
-	c.congAlg = alg
+	return c.fromNlmsg(msg)
+}
+
+func (c *CreateMsg) fromNlmsg(msg nlmsg) error {
+	if msg.typ != CREATE {
+		return fmt.Errorf("not a create message: %d", msg.typ)
+	}
+
+	c.socketId = msg.socketId
+	c.startSeq = msg.u32s[0]
+	c.congAlg = msg.str
 	return nil
 }
 
-type AckMsg struct {
+type MeasureMsg struct {
 	socketId uint32
 	ackNo    uint32
 	rtt      time.Duration
+	rin      uint64
+	rout     uint64
 }
 
-func (a *AckMsg) New(sid uint32, ack uint32, t time.Duration) {
-	a.socketId = sid
-	a.ackNo = ack
-	a.rtt = t
+func (m *MeasureMsg) New(
+	sid uint32,
+	ack uint32,
+	t time.Duration,
+	rin uint64,
+	rout uint64,
+) {
+	m.socketId = sid
+	m.ackNo = ack
+	m.rtt = t
+	m.rin = rin
+	m.rout = rout
 }
 
-func (a *AckMsg) SocketId() uint32 {
-	return a.socketId
+func (m *MeasureMsg) SocketId() uint32 {
+	return m.socketId
 }
 
-func (a *AckMsg) AckNo() uint32 {
-	return a.ackNo
+func (m *MeasureMsg) AckNo() uint32 {
+	return m.ackNo
 }
 
-func (a *AckMsg) Rtt() time.Duration {
-	return a.rtt
+func (m *MeasureMsg) Rtt() time.Duration {
+	return m.rtt
 }
 
-func (a *AckMsg) Serialize() ([]byte, error) {
-	return writeUInt32AndUInt32AndUInt64(
-		ACK,
-		a.socketId,
-		a.ackNo,
-		uint64(a.rtt.Nanoseconds()),
-	)
+func (m *MeasureMsg) Rin() uint64 {
+	return m.rin
 }
 
-func (a *AckMsg) Deserialize(buf []byte) error {
-	t, sid, ack, tm := readUInt32AndUInt32AndUInt64(buf)
-	if t != ACK {
-		return fmt.Errorf("not a ack message: %d", t)
+func (m *MeasureMsg) Rout() uint64 {
+	return m.rout
+}
+
+func (m *MeasureMsg) Serialize() ([]byte, error) {
+	return msgWriter(nlmsg{
+		typ:      MEASURE,
+		socketId: m.socketId,
+		u32s:     []uint32{m.ackNo, uint32(m.rtt.Nanoseconds())},
+		u64s:     []uint64{m.rin, m.rout},
+		str:      "",
+	})
+}
+
+func (m *MeasureMsg) Deserialize(buf []byte) error {
+	msg, err := msgReader(buf)
+	if err != nil {
+		return err
 	}
 
-	a.socketId = sid
-	a.ackNo = ack
-	a.rtt = time.Duration(tm>>3) * time.Microsecond
+	return m.fromNlmsg(msg)
+}
 
+func (m *MeasureMsg) fromNlmsg(nlm nlmsg) error {
+	if nlm.typ != MEASURE {
+		return fmt.Errorf("not a measure message: %d", nlm.typ)
+	}
+
+	m.socketId = nlm.socketId
+	m.ackNo = nlm.u32s[0]
+	m.rtt = time.Duration(nlm.u32s[1]) * time.Microsecond
+	m.rin = nlm.u64s[0]
+	m.rout = nlm.u64s[1]
 	return nil
 }
 
@@ -121,22 +152,31 @@ func (c *CwndMsg) Cwnd() uint32 {
 }
 
 func (c *CwndMsg) Serialize() ([]byte, error) {
-	return writeUInt32AndUInt32(
-		CWND,
-		c.socketId,
-		c.cwnd,
-	)
+	return msgWriter(nlmsg{
+		typ:      CWND,
+		socketId: c.socketId,
+		u32s:     []uint32{c.cwnd},
+		u64s:     []uint64{},
+		str:      "",
+	})
 }
 
 func (c *CwndMsg) Deserialize(buf []byte) error {
-	t, sid, cw := readUInt32AndUInt32(buf)
-	if t != CWND {
-		return fmt.Errorf("not a cwnd message: %d", t)
+	msg, err := msgReader(buf)
+	if err != nil {
+		return err
 	}
 
-	c.socketId = sid
-	c.cwnd = cw
+	return c.fromNlmsg(msg)
+}
 
+func (c *CwndMsg) fromNlmsg(msg nlmsg) error {
+	if msg.typ != CWND {
+		return fmt.Errorf("not a cwnd message: %d", msg.typ)
+	}
+
+	c.socketId = msg.socketId
+	c.cwnd = msg.u32s[0]
 	return nil
 }
 
@@ -145,34 +185,44 @@ type DropMsg struct {
 	event    string
 }
 
-func (c *DropMsg) New(sid uint32, ev string) {
-	c.socketId = sid
-	c.event = ev
+func (d *DropMsg) New(sid uint32, ev string) {
+	d.socketId = sid
+	d.event = ev
 }
 
-func (c *DropMsg) SocketId() uint32 {
-	return c.socketId
+func (d *DropMsg) SocketId() uint32 {
+	return d.socketId
 }
 
-func (c *DropMsg) Event() string {
-	return c.event
+func (d *DropMsg) Event() string {
+	return d.event
 }
 
-func (c *DropMsg) Serialize() ([]byte, error) {
-	return writeUInt32AndString(
-		DROP,
-		c.socketId,
-		c.event,
-	)
+func (d *DropMsg) Serialize() ([]byte, error) {
+	return msgWriter(nlmsg{
+		typ:      DROP,
+		socketId: d.socketId,
+		u32s:     []uint32{},
+		u64s:     []uint64{},
+		str:      d.event,
+	})
 }
 
-func (c *DropMsg) Deserialize(buf []byte) error {
-	t, sid, ev := readUInt32AndString(buf)
-	if t != DROP {
-		return fmt.Errorf("not a drop message: %d", t)
+func (d *DropMsg) Deserialize(buf []byte) error {
+	msg, err := msgReader(buf)
+	if err != nil {
+		return err
 	}
 
-	c.socketId = sid
-	c.event = ev
+	return d.fromNlmsg(msg)
+}
+
+func (d *DropMsg) fromNlmsg(msg nlmsg) error {
+	if msg.typ != DROP {
+		return fmt.Errorf("not a drop message: %d", msg.typ)
+	}
+
+	d.socketId = msg.socketId
+	d.event = msg.str
 	return nil
 }

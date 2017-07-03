@@ -19,10 +19,10 @@ const (
 )
 
 type Ipc struct {
-	CreateNotify chan ipcbackend.CreateMsg
-	AckNotify    chan ipcbackend.AckMsg
-	CwndNotify   chan ipcbackend.CwndMsg
-	DropNotify   chan ipcbackend.DropMsg
+	CreateNotify  chan ipcbackend.CreateMsg
+	MeasureNotify chan ipcbackend.MeasureMsg
+	CwndNotify    chan ipcbackend.CwndMsg
+	DropNotify    chan ipcbackend.DropMsg
 
 	backend ipcbackend.Backend
 }
@@ -85,11 +85,11 @@ func SetupCli(sockid uint32) (*Ipc, error) {
 
 func SetupWithBackend(back ipcbackend.Backend) (*Ipc, error) {
 	i := &Ipc{
-		CreateNotify: make(chan ipcbackend.CreateMsg),
-		AckNotify:    make(chan ipcbackend.AckMsg),
-		CwndNotify:   make(chan ipcbackend.CwndMsg),
-		DropNotify:   make(chan ipcbackend.DropMsg),
-		backend:      back,
+		CreateNotify:  make(chan ipcbackend.CreateMsg),
+		MeasureNotify: make(chan ipcbackend.MeasureMsg),
+		CwndNotify:    make(chan ipcbackend.CwndMsg),
+		DropNotify:    make(chan ipcbackend.DropMsg),
+		backend:       back,
 	}
 
 	ch := i.backend.Listen()
@@ -104,8 +104,8 @@ func (i *Ipc) demux(ch chan ipcbackend.Msg) {
 			i.DropNotify <- m.(ipcbackend.DropMsg)
 		case ipcbackend.CwndMsg:
 			i.CwndNotify <- m.(ipcbackend.CwndMsg)
-		case ipcbackend.AckMsg:
-			i.AckNotify <- m.(ipcbackend.AckMsg)
+		case ipcbackend.MeasureMsg:
+			i.MeasureNotify <- m.(ipcbackend.MeasureMsg)
 		case ipcbackend.CreateMsg:
 			i.CreateNotify <- m.(ipcbackend.CreateMsg)
 		default:
@@ -123,9 +123,9 @@ func (i *Ipc) SendCwndMsg(socketId uint32, cwnd uint32) error {
 	return i.backend.SendMsg(m)
 }
 
-func (i *Ipc) SendAckMsg(socketId uint32, ack uint32, rtt time.Duration) error {
-	m := i.backend.GetAckMsg()
-	m.New(socketId, ack, rtt)
+func (i *Ipc) SendMeasureMsg(socketId uint32, ack uint32, rtt time.Duration) error {
+	m := i.backend.GetMeasureMsg()
+	m.New(socketId, ack, rtt, 0, 0)
 
 	return i.backend.SendMsg(m)
 }
@@ -152,8 +152,8 @@ func (i *Ipc) ListenDropMsg() (chan ipcbackend.DropMsg, error) {
 	return i.DropNotify, nil
 }
 
-func (i *Ipc) ListenAckMsg() (chan ipcbackend.AckMsg, error) {
-	return i.AckNotify, nil
+func (i *Ipc) ListenMeasureMsg() (chan ipcbackend.MeasureMsg, error) {
+	return i.MeasureNotify, nil
 }
 
 func (i *Ipc) ListenCwndMsg() (chan ipcbackend.CwndMsg, error) {

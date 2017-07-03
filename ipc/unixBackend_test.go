@@ -18,7 +18,7 @@ func reader(b ipcbackend.Backend, ready chan interface{}, done chan error) {
 		return
 	}
 
-	inCh, _ := s.ListenAckMsg()
+	inCh, _ := s.ListenMeasureMsg()
 	ready <- struct{}{}
 	log.Info("waiting for message")
 	ackMsg := <-inCh
@@ -41,7 +41,7 @@ func writer(b ipcbackend.Backend, done chan error) {
 	}
 
 	log.Info("writing")
-	err = s.SendAckMsg(4, 42, time.Duration(time.Millisecond))
+	err = s.SendMeasureMsg(4, 42, time.Duration(time.Millisecond))
 	if err != nil {
 		done <- err
 		return

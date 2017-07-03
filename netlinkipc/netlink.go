@@ -79,8 +79,8 @@ func (n *NetlinkIpc) GetCreateMsg() ipcbackend.CreateMsg {
 	return &CreateMsg{}
 }
 
-func (n *NetlinkIpc) GetAckMsg() ipcbackend.AckMsg {
-	return &AckMsg{}
+func (n *NetlinkIpc) GetMeasureMsg() ipcbackend.MeasureMsg {
+	return &MeasureMsg{}
 }
 
 func (n *NetlinkIpc) GetCwndMsg() ipcbackend.CwndMsg {
@@ -160,33 +160,36 @@ func (n *NetlinkIpc) Close() error {
 }
 
 func parse(buf []byte) (msg ipcbackend.Msg) {
-	t, err := readType(buf)
+	nlm, err := msgReader(buf)
 	if err != nil {
 		log.WithFields(log.Fields{
-			"type": t,
-		}).Panic(err)
+			"msg": buf,
+			"err": err,
+		}).Panic("could not parse message")
 	}
 
-	switch t {
-	case CREATE:
-		msg = &CreateMsg{}
+	switch nlm.typ {
+	case MEASURE:
+		m := &MeasureMsg{}
+		m.fromNlmsg(nlm)
+		msg = m
 	case DROP:
-		msg = &DropMsg{}
+		m := &DropMsg{}
+		m.fromNlmsg(nlm)
+		msg = m
+	case CREATE:
+		m := &CreateMsg{}
+		m.fromNlmsg(nlm)
+		msg = m
 	case CWND:
-		msg = &CwndMsg{}
-	case ACK:
-		msg = &AckMsg{}
+		m := &CwndMsg{}
+		m.fromNlmsg(nlm)
+		msg = m
 	default:
 		log.WithFields(log.Fields{
-			"type": t,
+			"type": nlm.typ,
 		}).Panic("unknown type")
 	}
 
-	err = msg.Deserialize(buf)
-	if err != nil {
-		log.WithFields(log.Fields{
-			"msg": msg,
-		}).Panic(err)
-	}
 	return
 }

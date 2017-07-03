@@ -19,12 +19,20 @@ type CreateMsg interface {
 	StartSeq() uint32
 }
 
-type AckMsg interface {
+type MeasureMsg interface {
 	Msg
-	New(sid uint32, ack uint32, rtt time.Duration)
+	New(
+		sid uint32,
+		ack uint32,
+		rtt time.Duration,
+		rin uint64,
+		rout uint64,
+	)
 	SocketId() uint32
 	AckNo() uint32
 	Rtt() time.Duration
+	Rin() uint64
+	Rout() uint64
 }
 
 type CwndMsg interface {
@@ -47,7 +55,7 @@ type Backend interface {
 	SetupFinish() (Backend, error)
 
 	GetCreateMsg() CreateMsg
-	GetAckMsg() AckMsg
+	GetMeasureMsg() MeasureMsg
 	GetCwndMsg() CwndMsg
 	GetDropMsg() DropMsg
 

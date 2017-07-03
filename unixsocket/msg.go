@@ -58,32 +58,48 @@ func (c *CreateMsg) Deserialize(buf []byte) error {
 	return nil
 }
 
-type AckMsg struct {
+type MeasureMsg struct {
 	socketId uint32
 	ackNo    uint32
 	rtt      time.Duration
 }
 
-func (a *AckMsg) New(sid uint32, ack uint32, t time.Duration) {
+func (a *MeasureMsg) New(
+	sid uint32,
+	ack uint32,
+	t time.Duration,
+	rin uint64,
+	rout uint64,
+) {
 	a.socketId = sid
 	a.ackNo = ack
 	a.rtt = t
 }
 
-func (a *AckMsg) SocketId() uint32 {
+func (a *MeasureMsg) SocketId() uint32 {
 	return a.socketId
 }
 
-func (a *AckMsg) AckNo() uint32 {
+func (a *MeasureMsg) AckNo() uint32 {
 	return a.ackNo
 }
 
-func (a *AckMsg) Rtt() time.Duration {
+func (a *MeasureMsg) Rtt() time.Duration {
 	return a.rtt
 }
 
-func (a *AckMsg) Serialize() ([]byte, error) {
-	cmsg, err := makeNotifyAckMsg(a.socketId, a.ackNo, a.rtt)
+func (m *MeasureMsg) Rin() uint64 {
+	// unimplemented
+	return 0
+}
+
+func (m *MeasureMsg) Rout() uint64 {
+	// unimplemented
+	return 0
+}
+
+func (a *MeasureMsg) Serialize() ([]byte, error) {
+	cmsg, err := makeNotifyMeasureMsg(a.socketId, a.ackNo, a.rtt)
 	if err != nil {
 		return []byte{}, err
 	}
@@ -96,13 +112,13 @@ func (a *AckMsg) Serialize() ([]byte, error) {
 	return buf, nil
 }
 
-func (a *AckMsg) Deserialize(buf []byte) error {
+func (a *MeasureMsg) Deserialize(buf []byte) error {
 	msg, err := capnp.Unmarshal(buf)
 	if err != nil {
 		return err
 	}
 
-	err = a.readAckMsg(msg)
+	err = a.readMeasureMsg(msg)
 	if err != nil {
 		return err
 	}

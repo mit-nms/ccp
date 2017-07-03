@@ -66,7 +66,7 @@ func dummyCcp(ccp *ipc.Ipc) {
 	}()
 
 	go func() {
-		ackCh, err := ccp.ListenAckMsg()
+		ackCh, err := ccp.ListenMeasureMsg()
 		if err != nil {
 			log.Error(err)
 			return

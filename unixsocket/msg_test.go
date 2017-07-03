@@ -7,10 +7,10 @@ import (
 	"ccp/ipcBackend"
 )
 
-func TestEncodeAckMsg(t *testing.T) {
+func TestEncodeMeasureMsg(t *testing.T) {
 	sk := New()
-	akMsg := sk.GetAckMsg()
-	akMsg.New(4, 42, time.Duration(time.Millisecond))
+	akMsg := sk.GetMeasureMsg()
+	akMsg.New(4, 42, time.Duration(time.Millisecond), 0, 0)
 
 	buf, err := akMsg.Serialize()
 	if err != nil {
@@ -24,7 +24,7 @@ func TestEncodeAckMsg(t *testing.T) {
 		return
 	}
 
-	decMsg := msg.(ipcbackend.AckMsg)
+	decMsg := msg.(ipcbackend.MeasureMsg)
 	if decMsg.SocketId() != 4 || decMsg.AckNo() != 42 {
 		t.Errorf("wrong message\ngot (%v, %v)\nexpected (%v, %v)", decMsg.SocketId(), decMsg.AckNo(), 4, 42)
 		return
@@ -121,8 +121,8 @@ func TestBadEncodeCreateMsg(t *testing.T) {
 		return
 	}
 
-	akMsg := sk.GetAckMsg()
-	akMsg.New(4, 42, time.Duration(time.Millisecond))
+	akMsg := sk.GetMeasureMsg()
+	akMsg.New(4, 42, time.Duration(time.Millisecond), 0, 0)
 
 	buf, err = akMsg.Serialize()
 	if err != nil {
