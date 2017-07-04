@@ -75,22 +75,6 @@ func (s *NetlinkIpc) SetupFinish() (ipcbackend.Backend, error) {
 	}
 }
 
-func (n *NetlinkIpc) GetCreateMsg() ipcbackend.CreateMsg {
-	return &CreateMsg{}
-}
-
-func (n *NetlinkIpc) GetMeasureMsg() ipcbackend.MeasureMsg {
-	return &MeasureMsg{}
-}
-
-func (n *NetlinkIpc) GetCwndMsg() ipcbackend.CwndMsg {
-	return &CwndMsg{}
-}
-
-func (n *NetlinkIpc) GetDropMsg() ipcbackend.DropMsg {
-	return &DropMsg{}
-}
-
 func (n *NetlinkIpc) SendMsg(msg ipcbackend.Msg) error {
 	buf, err := msg.Serialize()
 	if err != nil {
@@ -106,6 +90,29 @@ func (n *NetlinkIpc) SendMsg(msg ipcbackend.Msg) error {
 
 	_, err = n.conn.Send(resp)
 	return err
+}
+
+func (n *NetlinkIpc) Listen() chan []byte {
+	msgCh := make(chan []byte)
+
+	go func() {
+		for {
+			select {
+			case <-n.killed:
+				close(msgCh)
+				return
+			case buf := <-n.listenCh:
+				msgCh <- buf
+			}
+		}
+	}()
+
+	return msgCh
+}
+
+func (n *NetlinkIpc) Close() error {
+	close(n.killed)
+	return nil
 }
 
 func (n *NetlinkIpc) listen() {
@@ -133,63 +140,4 @@ func (n *NetlinkIpc) listen() {
 			}
 		}
 	}
-}
-
-func (n *NetlinkIpc) Listen() chan ipcbackend.Msg {
-	msgCh := make(chan ipcbackend.Msg)
-
-	go func() {
-		for {
-			select {
-			case <-n.killed:
-				close(msgCh)
-				return
-			case buf := <-n.listenCh:
-				m := parse(buf)
-				msgCh <- m
-			}
-		}
-	}()
-
-	return msgCh
-}
-
-func (n *NetlinkIpc) Close() error {
-	close(n.killed)
-	return nil
-}
-
-func parse(buf []byte) (msg ipcbackend.Msg) {
-	nlm, err := msgReader(buf)
-	if err != nil {
-		log.WithFields(log.Fields{
-			"msg": buf,
-			"err": err,
-		}).Panic("could not parse message")
-	}
-
-	switch nlm.typ {
-	case MEASURE:
-		m := &MeasureMsg{}
-		m.fromNlmsg(nlm)
-		msg = m
-	case DROP:
-		m := &DropMsg{}
-		m.fromNlmsg(nlm)
-		msg = m
-	case CREATE:
-		m := &CreateMsg{}
-		m.fromNlmsg(nlm)
-		msg = m
-	case CWND:
-		m := &CwndMsg{}
-		m.fromNlmsg(nlm)
-		msg = m
-	default:
-		log.WithFields(log.Fields{
-			"type": nlm.typ,
-		}).Panic("unknown type")
-	}
-
-	return
 }

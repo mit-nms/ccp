@@ -5,7 +5,6 @@ import (
 
 	"ccp/ccpFlow"
 	"ccp/ipc"
-	"ccp/ipcBackend"
 
 	log "github.com/sirupsen/logrus"
 )
@@ -19,20 +18,30 @@ func (sock *Sock) setupIpc() error {
 	sock.ipc = ipcL
 
 	// start listening for cwnd changes
-	cwndChanges, err := sock.ipc.ListenCwndMsg()
+	cwndChanges, err := sock.ipc.ListenSetMsg()
 	if err != nil {
 		return err
 	}
 
-	go func(ch chan ipcbackend.CwndMsg) {
-		for cwnd := range ch {
+	go func(ch chan ipc.SetMsg) {
+		for smsg := range ch {
 			log.WithFields(log.Fields{
-				"newCwnd": cwnd.Cwnd,
-				"cwnd":    sock.cwnd,
+				"newSet":   smsg.Set(),
+				"setMode":  smsg.Mode(),
+				"currCwnd": sock.cwnd,
 			}).Info("update cwnd")
-			sock.mux.Lock()
-			sock.cwnd = cwnd.Cwnd()
-			sock.mux.Unlock()
+			switch smsg.Mode() {
+			case "cwnd":
+				sock.mux.Lock()
+				sock.cwnd = smsg.Set()
+				sock.mux.Unlock()
+			case "rate":
+				// set cwnd = rate * rtt
+				cwnd := float64(smsg.Set()) * (time.Duration(20) * time.Millisecond).Seconds()
+				sock.mux.Lock()
+				sock.cwnd = uint32(cwnd)
+				sock.mux.Unlock()
+			}
 			sock.shouldTx <- struct{}{}
 		}
 	}(cwndChanges)
@@ -119,7 +128,7 @@ func writeAckMsg(
 	ack uint32,
 	rtt time.Duration,
 ) {
-	err := out.SendMeasureMsg(id, ack, rtt)
+	err := out.SendMeasureMsg(id, ack, rtt, 0, 0)
 	if err != nil {
 		log.WithFields(log.Fields{"ack": ack, "name": name, "id": id, "where": "notify.writeAckMsg"}).Warn(err)
 		return

@@ -1,10 +1,15 @@
-package netlinkipc
+package ipc
 
 import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"time"
+
+	log "github.com/sirupsen/logrus"
 )
+
+// the internal serialization logic
 
 type msgType uint8
 
@@ -12,12 +17,12 @@ const (
 	CREATE msgType = iota
 	MEASURE
 	DROP
-	CWND
+	SET
 )
 
 /* Messages: header followed by 0+ uint32s, then 0+ uint64s, then 0-1 strings
  */
-type nlmsg struct {
+type ipcMsg struct {
 	typ      msgType
 	len      uint8
 	socketId uint32
@@ -66,13 +71,13 @@ func writeHeader(
 	return buf.Bytes()
 }
 
-func msgReader(buf []byte) (msg nlmsg, err error) {
+func msgReader(buf []byte) (msg ipcMsg, err error) {
 	typ, l, socketId, err := readHeader(buf)
 	if err != nil {
-		return nlmsg{}, err
+		return ipcMsg{}, err
 	}
 
-	msg = nlmsg{
+	msg = ipcMsg{
 		typ:      typ,
 		len:      l,
 		socketId: socketId,
@@ -96,12 +101,12 @@ func msgReader(buf []byte) (msg nlmsg, err error) {
 		numU32 = 2
 		numU64 = 2
 		hasStr = false
-	case CWND:
+	case SET:
 		numU32 = 1
 		numU64 = 0
-		hasStr = false
+		hasStr = true
 	default:
-		return nlmsg{}, fmt.Errorf("malformed message")
+		return ipcMsg{}, fmt.Errorf("malformed message")
 	}
 
 	payload := bytes.NewBuffer(buf[6:])
@@ -131,12 +136,52 @@ func msgReader(buf []byte) (msg nlmsg, err error) {
 	return
 }
 
-func msgWriter(msg nlmsg) ([]byte, error) {
+func (i *Ipc) demux(ch chan []byte) {
+	for buf := range ch {
+		ipcm, err := msgReader(buf)
+		if err != nil {
+			log.WithFields(log.Fields{
+				"err": err,
+				"buf": buf,
+			}).Warn("failed to parse message")
+			continue
+		}
+		switch ipcm.typ {
+		case MEASURE:
+			i.MeasureNotify <- MeasureMsg{
+				socketId: ipcm.socketId,
+				ackNo:    ipcm.u32s[0],
+				rtt:      time.Duration(ipcm.u32s[1]) * time.Nanosecond,
+				rin:      ipcm.u64s[0],
+				rout:     ipcm.u64s[1],
+			}
+		case DROP:
+			i.DropNotify <- DropMsg{
+				socketId: ipcm.socketId,
+				event:    ipcm.str,
+			}
+		case CREATE:
+			i.CreateNotify <- CreateMsg{
+				socketId: ipcm.socketId,
+				startSeq: ipcm.u32s[0],
+				congAlg:  ipcm.str,
+			}
+		case SET:
+			i.SetNotify <- SetMsg{
+				socketId:   ipcm.socketId,
+				cwndOrRate: ipcm.u32s[0],
+				mode:       ipcm.str,
+			}
+		}
+	}
+}
+
+func msgWriter(msg ipcMsg) ([]byte, error) {
 	// header: 6 Bytes
 	switch {
-	case msg.typ == CREATE && len(msg.u32s) == 1 && len(msg.u64s) == 0 && msg.str == "":
-		// + 1 uint32, no string
-		msg.len = 10
+	case msg.typ == CREATE && len(msg.u32s) == 1 && len(msg.u64s) == 0 && msg.str != "":
+		// + 1 uint32, + string
+		msg.len = 10 + uint8(len(msg.str))
 	case msg.typ == DROP && len(msg.u32s) == 0 && len(msg.u64s) == 0 && msg.str != "":
 		// + string
 		msg.len = uint8(6 + len(msg.str))
@@ -144,9 +189,9 @@ func msgWriter(msg nlmsg) ([]byte, error) {
 		// + 2 uint32, + 2 uint64, no string
 		// 6 + 8 + 16 = 30
 		msg.len = 30
-	case msg.typ == CWND && len(msg.u32s) == 1 && len(msg.u64s) == 0 && msg.str == "":
-		// + 1 uint32, no string
-		msg.len = 10
+	case msg.typ == SET && len(msg.u32s) == 1 && len(msg.u64s) == 0 && msg.str != "":
+		// + 1 uint32, + string
+		msg.len = 10 + uint8(len(msg.str))
 	default:
 		return nil, fmt.Errorf("Invalid message")
 	}

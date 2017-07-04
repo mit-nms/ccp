@@ -2,27 +2,26 @@ package ipc
 
 import (
 	"fmt"
-	"time"
 
 	"ccp/ipcBackend"
 	"ccp/netlinkipc"
 	"ccp/unixsocket"
-
-	log "github.com/Sirupsen/logrus"
 )
+
+// setup and teardown logic
 
 type Datapath int
 
 const (
-	UDP Datapath = iota
-	KERNEL
+	UNIX Datapath = iota
+	NETLINK
 )
 
 type Ipc struct {
-	CreateNotify  chan ipcbackend.CreateMsg
-	MeasureNotify chan ipcbackend.MeasureMsg
-	CwndNotify    chan ipcbackend.CwndMsg
-	DropNotify    chan ipcbackend.DropMsg
+	CreateNotify  chan CreateMsg
+	MeasureNotify chan MeasureMsg
+	SetNotify     chan SetMsg
+	DropNotify    chan DropMsg
 
 	backend ipcbackend.Backend
 }
@@ -37,9 +36,9 @@ func SetupCcpListen(datapath Datapath) (*Ipc, error) {
 	var err error
 
 	switch datapath {
-	case UDP:
+	case UNIX:
 		back, err = unixsocket.New().SetupListen("ccp-in", 0).SetupFinish()
-	case KERNEL:
+	case NETLINK:
 		back, err = netlinkipc.New().SetupListen("", 0).SetupFinish()
 	default:
 		return nil, fmt.Errorf("unknown datapath")
@@ -57,9 +56,9 @@ func SetupCcpSend(datapath Datapath, sockid uint32) (SendOnly, error) {
 	var err error
 
 	switch datapath {
-	case UDP:
+	case UNIX:
 		back, err = unixsocket.New().SetupSend("ccp-out", sockid).SetupFinish()
-	case KERNEL:
+	case NETLINK:
 		back, err = netlinkipc.New().SetupSend("", 0).SetupFinish()
 	default:
 		return nil, fmt.Errorf("unknown datapath")
@@ -85,10 +84,10 @@ func SetupCli(sockid uint32) (*Ipc, error) {
 
 func SetupWithBackend(back ipcbackend.Backend) (*Ipc, error) {
 	i := &Ipc{
-		CreateNotify:  make(chan ipcbackend.CreateMsg),
-		MeasureNotify: make(chan ipcbackend.MeasureMsg),
-		CwndNotify:    make(chan ipcbackend.CwndMsg),
-		DropNotify:    make(chan ipcbackend.DropMsg),
+		CreateNotify:  make(chan CreateMsg),
+		MeasureNotify: make(chan MeasureMsg),
+		SetNotify:     make(chan SetMsg),
+		DropNotify:    make(chan DropMsg),
 		backend:       back,
 	}
 
@@ -97,69 +96,6 @@ func SetupWithBackend(back ipcbackend.Backend) (*Ipc, error) {
 	return i, nil
 }
 
-func (i *Ipc) demux(ch chan ipcbackend.Msg) {
-	for m := range ch {
-		switch m.(type) {
-		case ipcbackend.DropMsg:
-			i.DropNotify <- m.(ipcbackend.DropMsg)
-		case ipcbackend.CwndMsg:
-			i.CwndNotify <- m.(ipcbackend.CwndMsg)
-		case ipcbackend.MeasureMsg:
-			i.MeasureNotify <- m.(ipcbackend.MeasureMsg)
-		case ipcbackend.CreateMsg:
-			i.CreateNotify <- m.(ipcbackend.CreateMsg)
-		default:
-			log.WithFields(log.Fields{
-				"msg": m,
-			}).Warn("unknown message")
-		}
-	}
-}
-
-func (i *Ipc) SendCwndMsg(socketId uint32, cwnd uint32) error {
-	m := i.backend.GetCwndMsg()
-	m.New(socketId, cwnd)
-
-	return i.backend.SendMsg(m)
-}
-
-func (i *Ipc) SendMeasureMsg(socketId uint32, ack uint32, rtt time.Duration) error {
-	m := i.backend.GetMeasureMsg()
-	m.New(socketId, ack, rtt, 0, 0)
-
-	return i.backend.SendMsg(m)
-}
-
-func (i *Ipc) SendCreateMsg(socketId uint32, startSeq uint32, alg string) error {
-	m := i.backend.GetCreateMsg()
-	m.New(socketId, startSeq, alg)
-
-	return i.backend.SendMsg(m)
-}
-
-func (i *Ipc) SendDropMsg(socketId uint32, ev string) error {
-	m := i.backend.GetDropMsg()
-	m.New(socketId, ev)
-
-	return i.backend.SendMsg(m)
-}
-
-func (i *Ipc) ListenCreateMsg() (chan ipcbackend.CreateMsg, error) {
-	return i.CreateNotify, nil
-}
-
-func (i *Ipc) ListenDropMsg() (chan ipcbackend.DropMsg, error) {
-	return i.DropNotify, nil
-}
-
-func (i *Ipc) ListenMeasureMsg() (chan ipcbackend.MeasureMsg, error) {
-	return i.MeasureNotify, nil
-}
-
-func (i *Ipc) ListenCwndMsg() (chan ipcbackend.CwndMsg, error) {
-	return i.CwndNotify, nil
-}
-
-func (i *Ipc) Close() {
-	i.backend.Close()
+func (i *Ipc) Close() error {
+	return i.backend.Close()
 }

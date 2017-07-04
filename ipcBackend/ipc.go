@@ -3,50 +3,10 @@ package ipcbackend
 import (
 	"fmt"
 	"os"
-	"time"
 )
 
 type Msg interface {
 	Serialize() ([]byte, error)
-	Deserialize([]byte) error
-}
-
-type CreateMsg interface {
-	Msg
-	New(sid uint32, startSeq uint32, alg string)
-	SocketId() uint32
-	CongAlg() string
-	StartSeq() uint32
-}
-
-type MeasureMsg interface {
-	Msg
-	New(
-		sid uint32,
-		ack uint32,
-		rtt time.Duration,
-		rin uint64,
-		rout uint64,
-	)
-	SocketId() uint32
-	AckNo() uint32
-	Rtt() time.Duration
-	Rin() uint64
-	Rout() uint64
-}
-
-type CwndMsg interface {
-	Msg
-	New(sid uint32, cwnd uint32)
-	SocketId() uint32
-	Cwnd() uint32
-}
-
-type DropMsg interface {
-	Msg
-	New(sid uint32, ev string)
-	SocketId() uint32
-	Event() string
 }
 
 type Backend interface {
@@ -54,13 +14,8 @@ type Backend interface {
 	SetupSend(l string, id uint32) Backend
 	SetupFinish() (Backend, error)
 
-	GetCreateMsg() CreateMsg
-	GetMeasureMsg() MeasureMsg
-	GetCwndMsg() CwndMsg
-	GetDropMsg() DropMsg
-
 	SendMsg(msg Msg) error
-	Listen() chan Msg
+	Listen() chan []byte
 
 	Close() error
 }

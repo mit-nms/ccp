@@ -96,7 +96,7 @@ func BenchmarkSocket(b *testing.B) {
 
 // from ccp/ccp.go
 func renoCcp(killed chan interface{}, ready chan interface{}) {
-	com, err := ipc.SetupCcpListen(ipc.UDP)
+	com, err := ipc.SetupCcpListen(ipc.UNIX)
 	if err != nil {
 		log.Error(err)
 		return
@@ -129,7 +129,7 @@ func renoCcp(killed chan interface{}, ready chan interface{}) {
 			return
 		case cr := <-createCh:
 			log.Info("got create")
-			ipCh, err := ipc.SetupCcpSend(ipc.UDP, cr.SocketId())
+			ipCh, err := ipc.SetupCcpSend(ipc.UNIX, cr.SocketId())
 			if err != nil {
 				log.WithFields(log.Fields{"flowid": cr.SocketId()}).Error("Error creating ccp->socket ipc channel for flow")
 			}

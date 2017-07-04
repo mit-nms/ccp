@@ -2,6 +2,7 @@ PACKAGES = ./ipc \
 		   ./ipcBackend \
 		   ./udpDataplane \
 		   ./unixsocket \
+		   ./netlinkipc \
 		   ./ccpFlow \
 		   ./reno \
 		   ./vegas \
@@ -13,12 +14,8 @@ all: compile test
 
 compile: ccpl testClient testServer nltest
 
-ccpl: capnpMsg/ccp.capnp.go build
+ccpl: build
 	go build -o ./ccpl ccp/ccp
-
-capnpMsg/ccp.capnp.go:
-	mkdir -p ./capnpMsg
-	capnp compile -I$(GOPATH)/src/zombiezen.com/go/capnproto2/std -ogo:./capnpMsg ccp.capnp
 
 build:
 	go build $(PACKAGES)
@@ -38,7 +35,6 @@ nltest: build
 	go build -o ./nltest ccp/nl_userapp
 
 clean:
-	rm -rf ./capnpMsg
 	rm -f ./testClient
 	rm -f ./testServer
 	rm -f ./nltest

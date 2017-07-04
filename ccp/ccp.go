@@ -38,9 +38,9 @@ func main() {
 
 	switch *datapath {
 	case "udp":
-		dp = ipc.UDP
+		dp = ipc.UNIX
 	case "kernel":
-		dp = ipc.KERNEL
+		dp = ipc.NETLINK
 	default:
 		log.WithFields(log.Fields{
 			"datapath": *datapath,

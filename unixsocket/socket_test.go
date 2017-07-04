@@ -8,6 +8,15 @@ import (
 	"time"
 )
 
+// mock message implementing ipcbackend.Msg
+type MockMsg struct {
+	b string
+}
+
+func (m MockMsg) Serialize() ([]byte, error) {
+	return []byte(m.b), nil
+}
+
 func TestCommunication(t *testing.T) {
 	rdone := make(chan error)
 	wdone := make(chan error)
@@ -59,16 +68,8 @@ func reader(ready chan interface{}, done chan error) {
 		return
 	}
 
-	sk := New()
-	decMsg := sk.GetMeasureMsg()
-	err = decMsg.Deserialize(buf)
-	if err != nil {
-		done <- err
-		return
-	}
-
-	if decMsg.SocketId() != 4 || decMsg.AckNo() != 42 {
-		done <- fmt.Errorf("wrong message\ngot (%v, %v)\nexpected (%v, %v)", decMsg.SocketId(), decMsg.AckNo(), 4, 42)
+	if string(buf[:3]) != "foo" {
+		done <- fmt.Errorf("wrong message\ngot (%s)\nexpected (foo)", buf)
 		return
 	}
 
@@ -97,10 +98,7 @@ func writer(ready chan interface{}, done chan error) {
 		out: out,
 	}
 
-	akMsg := s.GetMeasureMsg()
-	akMsg.New(4, 42, time.Duration(time.Millisecond), 0, 0)
-
-	err = s.SendMsg(akMsg)
+	err = s.SendMsg(&MockMsg{b: "foo"})
 	if err != nil {
 		done <- err
 		return

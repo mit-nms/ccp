@@ -3,15 +3,14 @@ package main
 import (
 	"ccp/ccpFlow"
 	"ccp/ipc"
-	"ccp/ipcBackend"
 
 	log "github.com/sirupsen/logrus"
 )
 
 func handleMsgs(
-	measureCh chan ipcbackend.MeasureMsg,
-	createCh chan ipcbackend.CreateMsg,
-	dropCh chan ipcbackend.DropMsg,
+	measureCh chan ipc.MeasureMsg,
+	createCh chan ipc.CreateMsg,
+	dropCh chan ipc.DropMsg,
 ) {
 	for {
 		select {
@@ -25,11 +24,13 @@ func handleMsgs(
 	}
 }
 
-func handleMeasure(ack ipcbackend.MeasureMsg) {
+func handleMeasure(ack ipc.MeasureMsg) {
 	log.WithFields(log.Fields{
 		"flowid": ack.SocketId(),
 		"ackno":  ack.AckNo(),
 		"rtt":    ack.Rtt(),
+		"rin":    ack.Rin(),
+		"rout":   ack.Rout(),
 	}).Info("handleMeasure")
 
 	if flow, ok := flows[ack.SocketId()]; !ok {
@@ -40,7 +41,7 @@ func handleMeasure(ack ipcbackend.MeasureMsg) {
 	}
 }
 
-func handleDrop(dr ipcbackend.DropMsg) {
+func handleDrop(dr ipc.DropMsg) {
 	log.WithFields(log.Fields{
 		"flowid":  dr.SocketId,
 		"drEvent": dr.Event,
@@ -54,7 +55,7 @@ func handleDrop(dr ipcbackend.DropMsg) {
 	}
 }
 
-func handleCreate(cr ipcbackend.CreateMsg) {
+func handleCreate(cr ipc.CreateMsg) {
 	log.WithFields(log.Fields{
 		"flowid":   cr.SocketId(),
 		"startseq": cr.StartSeq(),
@@ -102,9 +103,9 @@ gotFlow:
 	}
 
 	switch dp {
-	case ipc.UDP:
+	case ipc.UNIX:
 		f.Create(cr.SocketId(), ipCh, 1462, cr.StartSeq(), uint32(*initCwnd))
-	case ipc.KERNEL:
+	case ipc.NETLINK:
 		f.Create(cr.SocketId(), ipCh, 1460, cr.StartSeq(), uint32(*initCwnd))
 	}
 
