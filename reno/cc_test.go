@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"ccp/ccpFlow"
+	flowPattern "ccp/ccpFlow/pattern"
 )
 
 // mock ipc.SendOnly
@@ -24,6 +25,10 @@ func (m *MockSendOnly) SendRateMsg(socketId uint32, rate uint32) error {
 	go func() {
 		m.ch <- rate
 	}()
+	return nil
+}
+
+func (m *MockSendOnly) SendPatternMsg(socketId uint32, pattern *flowPattern.Pattern) error {
 	return nil
 }
 

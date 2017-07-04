@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"time"
 
+	flowPattern "ccp/ccpFlow/pattern"
+
 	log "github.com/sirupsen/logrus"
 )
 
@@ -18,6 +20,7 @@ const (
 	MEASURE
 	DROP
 	SET
+	PATTERN
 )
 
 /* Messages: header followed by 0+ uint32s, then 0+ uint64s, then 0-1 strings
@@ -105,6 +108,10 @@ func msgReader(buf []byte) (msg ipcMsg, err error) {
 		numU32 = 1
 		numU64 = 0
 		hasStr = true
+	case PATTERN:
+		numU32 = 1
+		numU64 = 0
+		hasStr = true
 	default:
 		return ipcMsg{}, fmt.Errorf("malformed message")
 	}
@@ -172,6 +179,16 @@ func (i *Ipc) demux(ch chan []byte) {
 				cwndOrRate: ipcm.u32s[0],
 				mode:       ipcm.str,
 			}
+		case PATTERN:
+			p, err := deserializePattern(ipcm.str, ipcm.u32s[0])
+			if err != nil {
+				continue
+			}
+
+			i.PatternNotify <- PatternMsg{
+				socketId: ipcm.socketId,
+				pattern:  p,
+			}
 		}
 	}
 }
@@ -190,6 +207,9 @@ func msgWriter(msg ipcMsg) ([]byte, error) {
 		// 6 + 8 + 16 = 30
 		msg.len = 30
 	case msg.typ == SET && len(msg.u32s) == 1 && len(msg.u64s) == 0 && msg.str != "":
+		// + 1 uint32, + string
+		msg.len = 10 + uint8(len(msg.str))
+	case msg.typ == PATTERN && len(msg.u32s) == 1 && len(msg.u64s) == 0 && msg.str != "":
 		// + 1 uint32, + string
 		msg.len = 10 + uint8(len(msg.str))
 	default:
@@ -214,4 +234,102 @@ func msgWriter(msg ipcMsg) ([]byte, error) {
 	}
 
 	return buf.Bytes(), nil
+}
+
+// Pattern serialization
+
+/* (type, len, value?) event description
+ * ----------------------------------------
+ * | Event Type | Len (B)  | Uint32?      |
+ * | (1 B)      | (1 B)    | (0||32 bits) |
+ * ----------------------------------------
+ * total: 2 || 6 Bytes
+ */
+func serializePatternEvent(ev flowPattern.PatternEvent) (buf []byte, err error) {
+	b := new(bytes.Buffer)
+	binary.Write(b, binary.LittleEndian, uint8(ev.Type))
+	var value uint32
+	switch ev.Type {
+	case flowPattern.SETRATEABS:
+		value = ev.Value
+		fallthrough
+	case flowPattern.WAITREL:
+		value = ev.Value
+		fallthrough
+	case flowPattern.SETCWNDABS:
+		value = ev.Value
+		fallthrough
+	case flowPattern.SETRATEREL:
+		value = ev.Value
+		fallthrough
+	case flowPattern.WAITABS:
+		value = uint32(ev.Duration.Nanoseconds() / 1e3)
+		err = binary.Write(b, binary.LittleEndian, uint8(6))
+		err = binary.Write(b, binary.LittleEndian, value)
+	case flowPattern.REPORT:
+		err = binary.Write(b, binary.LittleEndian, uint8(2))
+	default:
+		err = fmt.Errorf("unknown pattern-event type: %v", ev.Type)
+	}
+
+	buf = b.Bytes()
+	return
+}
+
+func serializeSequence(evs []flowPattern.PatternEvent) ([]byte, error) {
+	buf := make([]byte, 0)
+	for _, ev := range evs {
+		b, err := serializePatternEvent(ev)
+		if err != nil {
+			return nil, err
+		}
+
+		buf = append(buf, b...)
+	}
+
+	return buf, nil
+}
+
+func deserializePattern(msg string, numEvents uint32) (pat *flowPattern.Pattern, err error) {
+	var evType uint8
+	var evLength uint8
+	buf := bytes.NewBuffer([]byte(msg))
+	pat = flowPattern.NewPattern()
+	for i := uint32(0); i < numEvents; i++ {
+		err = binary.Read(buf, binary.LittleEndian, &evType)
+		err = binary.Read(buf, binary.LittleEndian, &evLength)
+		if err != nil {
+			return nil, err
+		}
+
+		if evLength == 2 && flowPattern.PatternEventType(evType) == flowPattern.REPORT {
+			pat = pat.Report()
+			continue
+		} else if evLength == 2 {
+			return nil, fmt.Errorf("could not parse event type %d", evType)
+		} else if evLength != 6 {
+			return nil, fmt.Errorf("could not parse event %d of length %d", evType, evLength)
+		}
+
+		var evVal uint32
+		err = binary.Read(buf, binary.LittleEndian, &evVal)
+		if err != nil {
+			return nil, err
+		}
+
+		switch flowPattern.PatternEventType(evType) {
+		case flowPattern.SETRATEABS:
+			fallthrough
+		case flowPattern.SETRATEREL:
+			pat = pat.RelativeRate(float32(evVal) / 100.0)
+		case flowPattern.WAITREL:
+			pat = pat.RelativeWait(float32(evVal) / 100.0)
+		case flowPattern.SETCWNDABS:
+			pat = pat.AbsoluteCwnd(evVal)
+		case flowPattern.WAITABS:
+			pat = pat.AbsoluteWait(time.Duration(evVal) * time.Microsecond)
+		}
+	}
+
+	return pat.Compile()
 }

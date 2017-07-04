@@ -3,6 +3,7 @@ package ipc
 import (
 	"fmt"
 
+	flowPattern "ccp/ccpFlow/pattern"
 	"ccp/ipcBackend"
 	"ccp/netlinkipc"
 	"ccp/unixsocket"
@@ -22,6 +23,7 @@ type Ipc struct {
 	MeasureNotify chan MeasureMsg
 	SetNotify     chan SetMsg
 	DropNotify    chan DropMsg
+	PatternNotify chan PatternMsg
 
 	backend ipcbackend.Backend
 }
@@ -30,6 +32,7 @@ type Ipc struct {
 type SendOnly interface {
 	SendRateMsg(socketId uint32, rate uint32) error
 	SendCwndMsg(socketId uint32, cwnd uint32) error
+	SendPatternMsg(socketId uint32, pattern *flowPattern.Pattern) error
 }
 
 func SetupCcpListen(datapath Datapath) (*Ipc, error) {
@@ -89,6 +92,7 @@ func SetupWithBackend(back ipcbackend.Backend) (*Ipc, error) {
 		MeasureNotify: make(chan MeasureMsg),
 		SetNotify:     make(chan SetMsg),
 		DropNotify:    make(chan DropMsg),
+		PatternNotify: make(chan PatternMsg),
 		backend:       back,
 	}
 

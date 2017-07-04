@@ -4,10 +4,116 @@ import (
 	"time"
 
 	"ccp/ccpFlow"
+	"ccp/ccpFlow/pattern"
 	"ccp/ipc"
 
 	log "github.com/sirupsen/logrus"
 )
+
+// TODO correct RTTs
+func (sock *Sock) doNonWaitPatternEvent(ev pattern.PatternEvent) {
+	switch ev.Type {
+	case pattern.WAITREL:
+		fallthrough
+	case pattern.WAITABS:
+		return
+
+	case pattern.REPORT:
+		// make it work together with notifyAck
+
+	case pattern.SETCWNDABS:
+		sock.mux.Lock()
+		sock.cwnd = ev.Value
+		sock.mux.Unlock()
+
+	case pattern.SETRATEABS:
+		// set cwnd = rate * rtt
+		cwnd := float64(ev.Value) * (time.Duration(20) * time.Millisecond).Seconds()
+		sock.mux.Lock()
+		sock.cwnd = uint32(cwnd)
+		sock.mux.Unlock()
+
+	case pattern.SETRATEREL:
+		// current rate?
+		// cwnd (bytes) / rtt
+		currRate := float64(sock.cwnd) / (time.Duration(20) * time.Millisecond).Seconds()
+		wantedRate := currRate * float64(ev.Value)
+		cwnd := wantedRate * (time.Duration(20) * time.Millisecond).Seconds()
+		sock.mux.Lock()
+		sock.cwnd = uint32(cwnd)
+		sock.mux.Unlock()
+	}
+}
+
+func (sock *Sock) doPattern(p *pattern.Pattern, stopPattern chan interface{}) {
+	// infinitely loop through events in the sequence
+	for {
+		for _, ev := range p.Sequence {
+			wait := time.Duration(0)
+			switch ev.Type {
+			case pattern.WAITABS:
+				wait = ev.Duration
+			case pattern.WAITREL:
+				wait = time.Duration(20*ev.Value) * time.Millisecond
+			default:
+				sock.doNonWaitPatternEvent(ev)
+			}
+
+			if wait != time.Duration(0) {
+				select {
+				case <-time.After(wait):
+					continue
+				case <-stopPattern:
+					return
+				}
+			}
+		}
+	}
+}
+
+func (sock *Sock) ipcListen(setCh chan ipc.SetMsg, patternCh chan ipc.PatternMsg) {
+	patternChanged := make(chan *pattern.Pattern)
+	go func() {
+		stopPattern := make(chan interface{})
+		for newPattern := range patternChanged {
+			select {
+			case stopPattern <- struct{}{}:
+			default:
+			}
+
+			go sock.doPattern(newPattern, stopPattern)
+		}
+	}()
+	for {
+		select {
+		case smsg := <-setCh:
+			log.WithFields(log.Fields{
+				"newSet":   smsg.Set(),
+				"setMode":  smsg.Mode(),
+				"currCwnd": sock.cwnd,
+			}).Info("update cwnd")
+			switch smsg.Mode() {
+			case "cwnd":
+				sock.mux.Lock()
+				sock.cwnd = smsg.Set()
+				sock.mux.Unlock()
+			case "rate":
+				// set cwnd = rate * rtt
+				// TODO keep RTT estimate around somewhere
+				cwnd := float64(smsg.Set()) * (time.Duration(20) * time.Millisecond).Seconds()
+				sock.mux.Lock()
+				sock.cwnd = uint32(cwnd)
+				sock.mux.Unlock()
+			}
+			sock.shouldTx <- struct{}{}
+		case pmsg := <-patternCh:
+			patternChanged <- pmsg.Pattern()
+		case <-sock.closed:
+			close(patternChanged)
+			return
+		}
+	}
+}
 
 func (sock *Sock) setupIpc() error {
 	ipcL, err := ipc.SetupCli(sock.port)
@@ -23,28 +129,12 @@ func (sock *Sock) setupIpc() error {
 		return err
 	}
 
-	go func(ch chan ipc.SetMsg) {
-		for smsg := range ch {
-			log.WithFields(log.Fields{
-				"newSet":   smsg.Set(),
-				"setMode":  smsg.Mode(),
-				"currCwnd": sock.cwnd,
-			}).Info("update cwnd")
-			switch smsg.Mode() {
-			case "cwnd":
-				sock.mux.Lock()
-				sock.cwnd = smsg.Set()
-				sock.mux.Unlock()
-			case "rate":
-				// set cwnd = rate * rtt
-				cwnd := float64(smsg.Set()) * (time.Duration(20) * time.Millisecond).Seconds()
-				sock.mux.Lock()
-				sock.cwnd = uint32(cwnd)
-				sock.mux.Unlock()
-			}
-			sock.shouldTx <- struct{}{}
-		}
-	}(cwndChanges)
+	patternSet, err := sock.ipc.ListenPatternMsg()
+	if err != nil {
+		return err
+	}
+
+	go sock.ipcListen(cwndChanges, patternSet)
 	go sock.doNotify()
 
 	sock.ipc.SendCreateMsg(sock.port, 0, "reno")

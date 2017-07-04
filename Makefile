@@ -1,9 +1,10 @@
-PACKAGES = ./ipc \
+PACKAGES = ./ccpFlow \
+		   ./ccpFlow/pattern \
 		   ./ipcBackend \
+		   ./ipc \
 		   ./udpDataplane \
 		   ./unixsocket \
 		   ./netlinkipc \
-		   ./ccpFlow \
 		   ./reno \
 		   ./vegas \
 		   ./cubic \

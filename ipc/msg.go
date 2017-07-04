@@ -2,6 +2,8 @@ package ipc
 
 import (
 	"time"
+
+	flowPattern "ccp/ccpFlow/pattern"
 )
 
 // the external serialization interface
@@ -149,6 +151,38 @@ func (d *DropMsg) Serialize() ([]byte, error) {
 	})
 }
 
+type PatternMsg struct {
+	socketId uint32
+	pattern  *flowPattern.Pattern
+}
+
+func (p *PatternMsg) New(sid uint32, t *flowPattern.Pattern) {
+	p.socketId = sid
+	p.pattern = t
+}
+
+func (p *PatternMsg) SocketId() uint32 {
+	return p.socketId
+}
+
+func (p *PatternMsg) Pattern() *flowPattern.Pattern {
+	return p.pattern
+}
+
+func (p *PatternMsg) Serialize() ([]byte, error) {
+	s, err := serializeSequence(p.pattern.Sequence)
+	if err != nil {
+		return nil, err
+	}
+
+	return msgWriter(ipcMsg{
+		typ:      PATTERN,
+		socketId: p.socketId,
+		u32s:     []uint32{uint32(len(p.pattern.Sequence))},
+		str:      string(s),
+	})
+}
+
 func (i *Ipc) SendCreateMsg(
 	socketId uint32,
 	startSeq uint32,
@@ -200,6 +234,13 @@ func (i *Ipc) SendDropMsg(socketId uint32, ev string) error {
 	})
 }
 
+func (i *Ipc) SendPatternMsg(socketId uint32, pattern *flowPattern.Pattern) error {
+	return i.backend.SendMsg(&PatternMsg{
+		socketId: socketId,
+		pattern:  pattern,
+	})
+}
+
 func (i *Ipc) ListenCreateMsg() (chan CreateMsg, error) {
 	return i.CreateNotify, nil
 }
@@ -214,4 +255,8 @@ func (i *Ipc) ListenMeasureMsg() (chan MeasureMsg, error) {
 
 func (i *Ipc) ListenSetMsg() (chan SetMsg, error) {
 	return i.SetNotify, nil
+}
+
+func (i *Ipc) ListenPatternMsg() (chan PatternMsg, error) {
+	return i.PatternNotify, nil
 }
