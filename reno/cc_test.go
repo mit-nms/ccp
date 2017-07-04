@@ -20,6 +20,13 @@ func (m *MockSendOnly) SendCwndMsg(socketId uint32, cwnd uint32) error {
 	return nil
 }
 
+func (m *MockSendOnly) SendRateMsg(socketId uint32, rate uint32) error {
+	go func() {
+		m.ch <- rate
+	}()
+	return nil
+}
+
 func TestReno(t *testing.T) {
 	t.Log("init")
 	Init()
@@ -43,7 +50,10 @@ func TestReno(t *testing.T) {
 		return
 	}
 
-	f.Ack(uint32(292400), time.Second)
+	f.GotMeasurement(ccpFlow.Measurement{
+		Ack: uint32(292400),
+		Rtt: time.Second,
+	})
 	if f.(*Reno).lastAck != 292400 || f.(*Reno).sockid != 42 {
 		t.Errorf("got \"%v\", expected lastAck=292400 and sockid=42", f)
 		return

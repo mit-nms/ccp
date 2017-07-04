@@ -1,8 +1,6 @@
 package vegas
 
 import (
-	"time"
-
 	"ccp/ccpFlow"
 	"ccp/ipc"
 
@@ -50,12 +48,12 @@ func (v *Vegas) Create(
 	v.beta = 4
 }
 
-func (v *Vegas) Ack(ack uint32, RTT_TD time.Duration) {
-	RTT := float32(RTT_TD.Seconds())
+func (v *Vegas) GotMeasurement(m ccpFlow.Measurement) {
+	RTT := float32(m.Rtt.Seconds())
 	if v.baseRTT <= 0 || RTT < v.baseRTT {
 		v.baseRTT = RTT
 	}
-	newBytesAcked := float32(ack - v.lastAck)
+	newBytesAcked := float32(m.Ack - v.lastAck)
 
 	inQueue := (v.cwnd * (RTT - v.baseRTT)) / (RTT * v.pktSize)
 	if inQueue <= v.alpha {
@@ -67,7 +65,7 @@ func (v *Vegas) Ack(ack uint32, RTT_TD time.Duration) {
 	v.notifyCwnd()
 
 	log.WithFields(log.Fields{
-		"gotAck":      ack,
+		"gotAck":      m.Ack,
 		"currCwnd":    v.cwnd,
 		"currLastAck": v.lastAck,
 		"newlyAcked":  newBytesAcked,
@@ -75,7 +73,7 @@ func (v *Vegas) Ack(ack uint32, RTT_TD time.Duration) {
 		"baseRTT":     v.baseRTT,
 	}).Info("[vegas] got ack")
 
-	v.lastAck = ack
+	v.lastAck = m.Ack
 	return
 }
 

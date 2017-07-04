@@ -28,6 +28,7 @@ type Ipc struct {
 
 // handle of IPC to pass to CC implementations
 type SendOnly interface {
+	SendRateMsg(socketId uint32, rate uint32) error
 	SendCwndMsg(socketId uint32, cwnd uint32) error
 }
 

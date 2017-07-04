@@ -78,14 +78,15 @@ func (c *Cubic) cubic_reset() {
 	c.ack_cnt = 0
 }
 
-func (c *Cubic) Ack(ack uint32, RTT_TD time.Duration) {
-	RTT := float32(RTT_TD.Seconds())
-	newBytesAcked := float32(ack - c.lastAck)
+func (c *Cubic) GotMeasurement(m ccpFlow.Measurement) {
+	RTT := float32(m.Rtt.Seconds())
+	newBytesAcked := float32(m.Ack - c.lastAck)
 	no_of_acks := int(newBytesAcked / c.pktSize)
 	for i := 0; i < no_of_acks; i++ {
 		if c.dMin <= 0 || RTT < c.dMin {
 			c.dMin = RTT
 		}
+
 		if c.cwnd <= c.ssthresh {
 			c.cwnd = c.cwnd + 1
 		} else {
@@ -98,17 +99,18 @@ func (c *Cubic) Ack(ack uint32, RTT_TD time.Duration) {
 			}
 		}
 	}
+
 	// notify increased cwnd
 	c.notifyCwnd()
 
 	log.WithFields(log.Fields{
-		"gotAck":      ack,
+		"gotAck":      m.Ack,
 		"currCwnd":    c.cwnd * c.pktSize,
 		"currLastAck": c.lastAck,
 		"newlyAcked":  newBytesAcked,
 	}).Info("[cubic] got ack")
 
-	c.lastAck = ack
+	c.lastAck = m.Ack
 	return
 }
 
@@ -121,6 +123,7 @@ func (c *Cubic) Drop(ev ccpFlow.DropEvent) {
 		} else {
 			c.Wlast_max = c.cwnd
 		}
+
 		c.cwnd = c.cwnd * (1 - c.BETA)
 		c.ssthresh = c.cwnd
 	case ccpFlow.Timeout:
@@ -152,9 +155,11 @@ func (c *Cubic) cubic_update() {
 			c.K = 0
 			c.origin_point = c.cwnd
 		}
+
 		c.ack_cnt = 1
 		c.Wtcp = c.cwnd
 	}
+
 	t := float32(time.Now().UnixNano()/1e9) + c.dMin - c.epoch_start
 	target := c.origin_point + c.C*((t-c.K)*(t-c.K)*(t-c.K))
 	if target > c.cwnd {
@@ -162,6 +167,7 @@ func (c *Cubic) cubic_update() {
 	} else {
 		c.cnt = 100 * c.cwnd
 	}
+
 	if c.tcp_friendliness {
 		c.cubic_tcp_friendliness()
 	}

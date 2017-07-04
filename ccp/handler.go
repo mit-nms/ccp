@@ -37,7 +37,12 @@ func handleMeasure(ack ipc.MeasureMsg) {
 		log.WithFields(log.Fields{"flowid": ack.SocketId()}).Warn("Unknown flow")
 		return
 	} else {
-		flow.Ack(ack.AckNo(), ack.Rtt())
+		flow.GotMeasurement(ccpFlow.Measurement{
+			Ack:  ack.AckNo(),
+			Rtt:  ack.Rtt(),
+			Rin:  ack.Rin(),
+			Rout: ack.Rout(),
+		})
 	}
 }
 

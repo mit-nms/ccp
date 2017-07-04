@@ -2,7 +2,6 @@ package ccpFlow
 
 import (
 	"testing"
-	"time"
 
 	"ccp/ipc"
 )
@@ -23,7 +22,7 @@ func (t *TestFlow) Create(
 	return
 }
 
-func (t *TestFlow) Ack(ack uint32, rtt time.Duration) {
+func (t *TestFlow) GotMeasurement(m Measurement) {
 	return
 }
 

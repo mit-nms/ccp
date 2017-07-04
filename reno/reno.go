@@ -1,8 +1,6 @@
 package reno
 
 import (
-	"time"
-
 	"ccp/ccpFlow"
 	"ccp/ipc"
 
@@ -44,21 +42,21 @@ func (r *Reno) Create(
 	}
 }
 
-func (r *Reno) Ack(ack uint32, rtt time.Duration) {
-	newBytesAcked := float32(ack - r.lastAck)
+func (r *Reno) GotMeasurement(m ccpFlow.Measurement) {
+	newBytesAcked := float32(m.Ack - r.lastAck)
 	// increase cwnd by 1 / cwnd per packet
 	r.cwnd += float32(r.pktSize) * (newBytesAcked / r.cwnd)
 	// notify increased cwnd
 	r.notifyCwnd()
 
 	log.WithFields(log.Fields{
-		"gotAck":      ack,
+		"gotAck":      m.Ack,
 		"currCwnd":    r.cwnd,
 		"currLastAck": r.lastAck,
 		"newlyAcked":  newBytesAcked,
 	}).Info("[reno] got ack")
 
-	r.lastAck = ack
+	r.lastAck = m.Ack
 	return
 }
 

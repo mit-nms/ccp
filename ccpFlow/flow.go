@@ -13,8 +13,16 @@ var DupAck DropEvent = DropEvent("dupack")
 var Timeout DropEvent = DropEvent("timeout")
 var Ecn DropEvent = DropEvent("ecn")
 
+type Measurement struct {
+	Ack  uint32
+	Rtt  time.Duration
+	Rin  uint64
+	Rout uint64
+}
+
 type Flow interface {
-	Name() string // Name returns a string identifying the CC algorithm
+	// Name returns a string identifying the CC algorithm
+	Name() string
 	// Create takes configuration parameters from the CCP and does initialization
 	Create(
 		sockid uint32,
@@ -23,8 +31,10 @@ type Flow interface {
 		startSeq uint32,
 		initCwnd uint32,
 	)
-	Ack(ack uint32, rtt time.Duration) // Ack: callback for when an ack is received
-	Drop(event DropEvent)              // Drop: callback for drop event
+	// Measurement: callback for when a specified measurement is received
+	GotMeasurement(m Measurement)
+	// Drop: callback for drop event
+	Drop(event DropEvent)
 }
 
 // name of flow to function which returns blank instance
