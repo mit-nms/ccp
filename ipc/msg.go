@@ -92,39 +92,6 @@ func (m *MeasureMsg) Serialize() ([]byte, error) {
 	})
 }
 
-type SetMsg struct {
-	socketId   uint32
-	cwndOrRate uint32
-	mode       string
-}
-
-func (s *SetMsg) New(sid uint32, cw uint32, m string) {
-	s.socketId = sid
-	s.cwndOrRate = cw
-	s.mode = m
-}
-
-func (s *SetMsg) SocketId() uint32 {
-	return s.socketId
-}
-
-func (s *SetMsg) Set() uint32 {
-	return s.cwndOrRate
-}
-
-func (s *SetMsg) Mode() string {
-	return s.mode
-}
-
-func (s *SetMsg) Serialize() ([]byte, error) {
-	return msgWriter(ipcMsg{
-		typ:      SET,
-		socketId: s.socketId,
-		u32s:     []uint32{s.cwndOrRate},
-		str:      s.mode,
-	})
-}
-
 type DropMsg struct {
 	socketId uint32
 	event    string
@@ -211,22 +178,6 @@ func (i *Ipc) SendMeasureMsg(
 	})
 }
 
-func (i *Ipc) SendCwndMsg(socketId uint32, cwnd uint32) error {
-	return i.backend.SendMsg(&SetMsg{
-		socketId:   socketId,
-		cwndOrRate: cwnd,
-		mode:       "cwnd",
-	})
-}
-
-func (i *Ipc) SendRateMsg(socketId uint32, rate uint32) error {
-	return i.backend.SendMsg(&SetMsg{
-		socketId:   socketId,
-		cwndOrRate: rate,
-		mode:       "rate",
-	})
-}
-
 func (i *Ipc) SendDropMsg(socketId uint32, ev string) error {
 	return i.backend.SendMsg(&DropMsg{
 		socketId: socketId,
@@ -251,10 +202,6 @@ func (i *Ipc) ListenDropMsg() (chan DropMsg, error) {
 
 func (i *Ipc) ListenMeasureMsg() (chan MeasureMsg, error) {
 	return i.MeasureNotify, nil
-}
-
-func (i *Ipc) ListenSetMsg() (chan SetMsg, error) {
-	return i.SetNotify, nil
 }
 
 func (i *Ipc) ListenPatternMsg() (chan PatternMsg, error) {

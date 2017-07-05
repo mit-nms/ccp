@@ -24,7 +24,9 @@ const (
 type PatternEvent struct {
 	Type     PatternEventType
 	Duration time.Duration
-	Value    uint32
+	Cwnd     uint32
+	Rate     float32
+	Factor   float32
 }
 
 func NewPattern() *Pattern {
@@ -33,46 +35,46 @@ func NewPattern() *Pattern {
 	}
 }
 
-func (p *Pattern) AbsoluteRate(rate float32) *Pattern {
+func (p *Pattern) Cwnd(cwnd uint32) *Pattern {
 	if p.err != nil {
 		return p
 	}
 
 	p.Sequence = append(p.Sequence, PatternEvent{
-		Type:  SETRATEABS,
-		Value: uint32(rate * 100),
+		Type: SETCWNDABS,
+		Cwnd: cwnd,
 	})
 
 	return p
 }
 
-func (p *Pattern) RelativeRate(rate float32) *Pattern {
+func (p *Pattern) Rate(rate float32) *Pattern {
 	if p.err != nil {
 		return p
 	}
 
 	p.Sequence = append(p.Sequence, PatternEvent{
-		Type:  SETRATEREL,
-		Value: uint32(rate * 100),
+		Type: SETRATEABS,
+		Rate: rate,
 	})
 
 	return p
 }
 
-func (p *Pattern) AbsoluteCwnd(cwnd uint32) *Pattern {
+func (p *Pattern) RelativeRate(factor float32) *Pattern {
 	if p.err != nil {
 		return p
 	}
 
 	p.Sequence = append(p.Sequence, PatternEvent{
-		Type:  SETCWNDABS,
-		Value: cwnd,
+		Type:   SETRATEREL,
+		Factor: factor,
 	})
 
 	return p
 }
 
-func (p *Pattern) AbsoluteWait(wait time.Duration) *Pattern {
+func (p *Pattern) Wait(wait time.Duration) *Pattern {
 	if p.err != nil {
 		return p
 	}
@@ -90,14 +92,14 @@ func (p *Pattern) AbsoluteWait(wait time.Duration) *Pattern {
 	return p
 }
 
-func (p *Pattern) RelativeWait(waitFrac float32) *Pattern {
+func (p *Pattern) WaitRtts(factor float32) *Pattern {
 	if p.err != nil {
 		return p
 	}
 
 	p.Sequence = append(p.Sequence, PatternEvent{
-		Type:  WAITREL,
-		Value: uint32(waitFrac * 100),
+		Type:   WAITREL,
+		Factor: factor,
 	})
 
 	return p
@@ -116,6 +118,12 @@ func (p *Pattern) Report() *Pattern {
 }
 
 func (p *Pattern) Compile() (*Pattern, error) {
+	if len(p.Sequence) == 1 {
+		// add a long wait after
+		// this will function as a one-off set
+		p = p.Wait(time.Second)
+	}
+
 	if p.err != nil {
 		return nil, p.err
 	}

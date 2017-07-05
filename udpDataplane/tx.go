@@ -134,7 +134,7 @@ func (sock *Sock) doTx() {
 			"length":        pkt.Length,
 			"inFlight":      sock.inFlight.getOrder(),
 			"cwnd":          cwnd,
-		}).Info("sent packet")
+		}).Debug("sent packet")
 	}
 
 	// send an ACK

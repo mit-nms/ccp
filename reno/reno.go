@@ -1,7 +1,10 @@
 package reno
 
 import (
+    "time"
+
 	"ccp/ccpFlow"
+	"ccp/ccpFlow/pattern"
 	"ccp/ipc"
 
 	log "github.com/sirupsen/logrus"
@@ -14,6 +17,8 @@ type Reno struct {
 
 	cwnd    float32
 	lastAck uint32
+    rtt time.Duration
+    lastDrop time.Time
 
 	sockid uint32
 	ipc    ipc.SendOnly
@@ -35,19 +40,28 @@ func (r *Reno) Create(
 	r.pktSize = pktsz
 	r.initCwnd = float32(pktsz * 10)
 	r.cwnd = float32(pktsz * startCwnd)
+    r.lastDrop = time.Now()
+    r.rtt  = time.Since(r.lastDrop)
 	if startSeq == 0 {
 		r.lastAck = startSeq
 	} else {
 		r.lastAck = startSeq - 1
 	}
+
+	r.newPattern()
 }
 
 func (r *Reno) GotMeasurement(m ccpFlow.Measurement) {
+    if m.Ack < r.lastAck {
+        return
+    }
+
 	newBytesAcked := float32(m.Ack - r.lastAck)
 	// increase cwnd by 1 / cwnd per packet
 	r.cwnd += float32(r.pktSize) * (newBytesAcked / r.cwnd)
 	// notify increased cwnd
-	r.notifyCwnd()
+	r.newPattern()
+    r.rtt = m.Rtt
 
 	log.WithFields(log.Fields{
 		"gotAck":      m.Ack,
@@ -61,6 +75,12 @@ func (r *Reno) GotMeasurement(m ccpFlow.Measurement) {
 }
 
 func (r *Reno) Drop(ev ccpFlow.DropEvent) {
+    if time.Since(r.lastDrop) <= r.rtt {
+        return
+    }
+
+    r.lastDrop = time.Now()
+
 	oldCwnd := r.cwnd
 	switch ev {
 	case ccpFlow.DupAck:
@@ -83,11 +103,25 @@ func (r *Reno) Drop(ev ccpFlow.DropEvent) {
 		"event":    ev,
 	}).Info("[reno] drop")
 
-	r.notifyCwnd()
+	r.newPattern()
 }
 
-func (r *Reno) notifyCwnd() {
-	err := r.ipc.SendCwndMsg(r.sockid, uint32(r.cwnd))
+func (r *Reno) newPattern() {
+	staticPattern, err := pattern.
+		NewPattern().
+		Cwnd(uint32(r.cwnd)).
+		WaitRtts(0.5).
+		Report().
+		Compile()
+	if err != nil {
+		log.WithFields(log.Fields{
+			"err":  err,
+			"cwnd": r.cwnd,
+		}).Info("make cwnd msg failed")
+		return
+	}
+
+	err = r.ipc.SendPatternMsg(r.sockid, staticPattern)
 	if err != nil {
 		log.WithFields(log.Fields{"cwnd": r.cwnd, "name": r.sockid}).Warn(err)
 	}

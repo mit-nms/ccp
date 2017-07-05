@@ -11,24 +11,13 @@ import (
 
 // mock ipc.SendOnly
 type MockSendOnly struct {
-	ch chan uint32
-}
-
-func (m *MockSendOnly) SendCwndMsg(socketId uint32, cwnd uint32) error {
-	go func() {
-		m.ch <- cwnd
-	}()
-	return nil
-}
-
-func (m *MockSendOnly) SendRateMsg(socketId uint32, rate uint32) error {
-	go func() {
-		m.ch <- rate
-	}()
-	return nil
+	ch chan *flowPattern.Pattern
 }
 
 func (m *MockSendOnly) SendPatternMsg(socketId uint32, pattern *flowPattern.Pattern) error {
+	go func() {
+		m.ch <- pattern
+	}()
 	return nil
 }
 
@@ -46,9 +35,10 @@ func TestReno(t *testing.T) {
 		return
 	}
 
-	ipcMockCh := make(chan uint32)
+	ipcMockCh := make(chan *flowPattern.Pattern)
 	mockIpc := &MockSendOnly{ch: ipcMockCh}
 	f.Create(42, mockIpc, 1462, 0, 10)
+	<-ipcMockCh // ignore the first initial cwnd set
 
 	if f.(*Reno).lastAck != 0 || f.(*Reno).sockid != 42 {
 		t.Errorf("got \"%v\", expected lastAck=0 and sockid=42", f)
@@ -57,32 +47,50 @@ func TestReno(t *testing.T) {
 
 	f.GotMeasurement(ccpFlow.Measurement{
 		Ack: uint32(292400),
-		Rtt: time.Second,
+		Rtt: time.Microsecond,
 	})
 	if f.(*Reno).lastAck != 292400 || f.(*Reno).sockid != 42 {
 		t.Errorf("got \"%v\", expected lastAck=292400 and sockid=42", f)
 		return
 	}
 
-	c := <-ipcMockCh
-	if c != 43860 {
-		t.Errorf("expected cwnd 43860, got %d", c)
+	p := <-ipcMockCh
+	if len(p.Sequence) != 3 {
+		t.Errorf("expected sequence length 3, got %d", len(p.Sequence))
+		return
+	} else if p.Sequence[0].Type != flowPattern.SETCWNDABS {
+		t.Errorf("expected event type %d, got %d", flowPattern.SETCWNDABS, p.Sequence[0].Type)
+		return
+	} else if p.Sequence[0].Cwnd != 43860 {
+		t.Errorf("expected cwnd 43860, got %d", p.Sequence[0].Cwnd)
 		return
 	}
 
 	t.Log("isolated drop")
 	f.Drop(ccpFlow.DupAck)
-	c = <-ipcMockCh
-	if c != 21930 {
-		t.Errorf("expected cwnd 21930, got %d", c)
+	p = <-ipcMockCh
+	if len(p.Sequence) != 3 {
+		t.Errorf("expected sequence length 2, got %d", len(p.Sequence))
+		return
+	} else if p.Sequence[0].Type != flowPattern.SETCWNDABS {
+		t.Errorf("expected event type %d, got %d", flowPattern.SETCWNDABS, p.Sequence[0].Type)
+		return
+	} else if p.Sequence[0].Cwnd != 21930 {
+		t.Errorf("expected cwnd 21930, got %d", p.Sequence[0].Cwnd)
 		return
 	}
 
 	t.Log("complete drop")
 	f.Drop(ccpFlow.Timeout)
-	c = <-ipcMockCh
-	if c != 14620 {
-		t.Errorf("expected cwnd 14620, got %d", c)
+	p = <-ipcMockCh
+	if len(p.Sequence) != 3 {
+		t.Errorf("expected sequence length 2, got %d", len(p.Sequence))
+		return
+	} else if p.Sequence[0].Type != flowPattern.SETCWNDABS {
+		t.Errorf("expected event type %d, got %d", flowPattern.SETCWNDABS, p.Sequence[0].Type)
+		return
+	} else if p.Sequence[0].Cwnd != 14620 {
+		t.Errorf("expected cwnd 14620, got %d", p.Sequence[0].Cwnd)
 		return
 	}
 }

@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+    "time"
 
 	"ccp/ccpFlow"
 	"ccp/cubic"
@@ -21,6 +22,9 @@ var dp ipc.Datapath
 
 func init() {
 	log.SetLevel(log.InfoLevel)
+    log.SetFormatter(&log.JSONFormatter{
+        TimestampFormat: time.RFC3339Nano,
+    })
 	flows = make(map[uint32]ccpFlow.Flow)
 	cubic.Init()
 	vegas.Init()

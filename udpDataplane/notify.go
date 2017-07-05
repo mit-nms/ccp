@@ -10,68 +10,17 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-// TODO correct RTTs
-func (sock *Sock) doNonWaitPatternEvent(ev pattern.PatternEvent) {
-	switch ev.Type {
-	case pattern.WAITREL:
-		fallthrough
-	case pattern.WAITABS:
-		return
-
-	case pattern.REPORT:
-		// make it work together with notifyAck
-
-	case pattern.SETCWNDABS:
-		sock.mux.Lock()
-		sock.cwnd = ev.Value
-		sock.mux.Unlock()
-
-	case pattern.SETRATEABS:
-		// set cwnd = rate * rtt
-		cwnd := float64(ev.Value) * (time.Duration(20) * time.Millisecond).Seconds()
-		sock.mux.Lock()
-		sock.cwnd = uint32(cwnd)
-		sock.mux.Unlock()
-
-	case pattern.SETRATEREL:
-		// current rate?
-		// cwnd (bytes) / rtt
-		currRate := float64(sock.cwnd) / (time.Duration(20) * time.Millisecond).Seconds()
-		wantedRate := currRate * float64(ev.Value)
-		cwnd := wantedRate * (time.Duration(20) * time.Millisecond).Seconds()
-		sock.mux.Lock()
-		sock.cwnd = uint32(cwnd)
-		sock.mux.Unlock()
-	}
+type notifyAck struct {
+	ack uint32
+	rtt time.Duration
 }
 
-func (sock *Sock) doPattern(p *pattern.Pattern, stopPattern chan interface{}) {
-	// infinitely loop through events in the sequence
-	for {
-		for _, ev := range p.Sequence {
-			wait := time.Duration(0)
-			switch ev.Type {
-			case pattern.WAITABS:
-				wait = ev.Duration
-			case pattern.WAITREL:
-				wait = time.Duration(20*ev.Value) * time.Millisecond
-			default:
-				sock.doNonWaitPatternEvent(ev)
-			}
-
-			if wait != time.Duration(0) {
-				select {
-				case <-time.After(wait):
-					continue
-				case <-stopPattern:
-					return
-				}
-			}
-		}
-	}
+type notifyDrop struct {
+	lastAck uint32
+	ev      string
 }
 
-func (sock *Sock) ipcListen(setCh chan ipc.SetMsg, patternCh chan ipc.PatternMsg) {
+func (sock *Sock) ipcListen(patternCh chan ipc.PatternMsg, measureMsgs chan notifyAck) {
 	patternChanged := make(chan *pattern.Pattern)
 	go func() {
 		stopPattern := make(chan interface{})
@@ -81,31 +30,12 @@ func (sock *Sock) ipcListen(setCh chan ipc.SetMsg, patternCh chan ipc.PatternMsg
 			default:
 			}
 
-			go sock.doPattern(newPattern, stopPattern)
+			go sock.doPattern(newPattern, measureMsgs, stopPattern)
 		}
 	}()
+
 	for {
 		select {
-		case smsg := <-setCh:
-			log.WithFields(log.Fields{
-				"newSet":   smsg.Set(),
-				"setMode":  smsg.Mode(),
-				"currCwnd": sock.cwnd,
-			}).Info("update cwnd")
-			switch smsg.Mode() {
-			case "cwnd":
-				sock.mux.Lock()
-				sock.cwnd = smsg.Set()
-				sock.mux.Unlock()
-			case "rate":
-				// set cwnd = rate * rtt
-				// TODO keep RTT estimate around somewhere
-				cwnd := float64(smsg.Set()) * (time.Duration(20) * time.Millisecond).Seconds()
-				sock.mux.Lock()
-				sock.cwnd = uint32(cwnd)
-				sock.mux.Unlock()
-			}
-			sock.shouldTx <- struct{}{}
 		case pmsg := <-patternCh:
 			patternChanged <- pmsg.Pattern()
 		case <-sock.closed:
@@ -123,65 +53,42 @@ func (sock *Sock) setupIpc() error {
 
 	sock.ipc = ipcL
 
-	// start listening for cwnd changes
-	cwndChanges, err := sock.ipc.ListenSetMsg()
-	if err != nil {
-		return err
-	}
-
+	// start listening for pattern specifications
 	patternSet, err := sock.ipc.ListenPatternMsg()
 	if err != nil {
 		return err
 	}
 
-	go sock.ipcListen(cwndChanges, patternSet)
-	go sock.doNotify()
+	measureMsgWaiter := make(chan notifyAck)
+	go sock.doNotify(measureMsgWaiter)
+	go sock.ipcListen(patternSet, measureMsgWaiter)
 
 	sock.ipc.SendCreateMsg(sock.port, 0, "reno")
 	return nil
 }
 
-type notifyAck struct {
-	ack uint32
-	rtt time.Duration
-}
-
-type notifyDrop struct {
-	lastAck uint32
-	ev      string
-}
-
-func (sock *Sock) doNotify() {
+func (sock *Sock) doNotify(measureMsg chan notifyAck) {
 	totAck := uint32(0)
-	notifiedAckNo := uint32(0)
 	droppedPktNo := uint32(0)
-	srtt := time.Duration(0)
 	timeout := time.NewTimer(time.Second)
 	for {
 		select {
 		case notifAck := <-sock.notifyAcks:
 			if notifAck.ack > totAck {
 				totAck = notifAck.ack
-			}
+			} else {
+                continue
+            }
 
 			log.WithFields(log.Fields{
-				"name":          sock.name,
-				"acked":         totAck,
-				"rtt":           notifAck.rtt,
-				"notifiedAckNo": notifiedAckNo,
+				"name":  sock.name,
+				"acked": totAck,
+				"rtt":   notifAck.rtt,
 			}).Info("notifyAcks")
 
-			if srtt == time.Duration(0) {
-				srtt = notifAck.rtt
-			} else {
-				srtt_ns := 0.875*float64(srtt.Nanoseconds()) + 0.125*float64(notifAck.rtt)
-				srtt = time.Duration(int64(srtt_ns)) * time.Nanosecond
-			}
-
-			if totAck-notifiedAckNo > sock.ackNotifyThresh {
-				// notify control plane of new acks
-				notifiedAckNo = totAck
-				writeAckMsg(sock.name, sock.port, sock.ipc, notifiedAckNo, srtt)
+			select {
+			case measureMsg <- notifAck:
+			default:
 			}
 
 			select {
@@ -211,7 +118,73 @@ func (sock *Sock) doNotify() {
 	}
 }
 
-func writeAckMsg(
+func (sock *Sock) doNonWaitPatternEvent(ev pattern.PatternEvent, currRtt time.Duration) {
+	var cwnd uint32
+	switch ev.Type {
+	case pattern.REPORT:
+		fallthrough
+	case pattern.WAITREL:
+		fallthrough
+	case pattern.WAITABS:
+		return
+
+	case pattern.SETRATEABS:
+		// set cwnd = rate * rtt
+		cwnd = uint32(float64(ev.Rate) * currRtt.Seconds())
+
+	case pattern.SETCWNDABS:
+		cwnd = ev.Cwnd
+
+	case pattern.SETRATEREL:
+		cwnd = uint32(float64(sock.cwnd) * float64(ev.Factor))
+	}
+
+	log.WithFields(log.Fields{
+		"cwnd": cwnd,
+	}).Info("set cwnd")
+	sock.mux.Lock()
+	sock.cwnd = cwnd
+	sock.mux.Unlock()
+}
+
+func (sock *Sock) doPattern(p *pattern.Pattern, measureMsgs chan notifyAck, stopPattern chan interface{}) {
+	// infinitely loop through events in the sequence
+	var currRtt time.Duration
+	for {
+		for _, ev := range p.Sequence {
+			wait := time.Duration(0)
+			switch ev.Type {
+			case pattern.WAITABS:
+				wait = ev.Duration
+			case pattern.WAITREL:
+				wait = time.Duration(currRtt.Seconds()*float64(ev.Factor)*1e6) * time.Microsecond
+
+			case pattern.REPORT:
+				select {
+				case meas := <-measureMsgs:
+					currRtt = meas.rtt
+					writeMeasureMsg(sock.name, sock.port, sock.ipc, meas.ack, meas.rtt)
+					continue
+				case <-stopPattern:
+					return
+				}
+
+			default:
+				sock.doNonWaitPatternEvent(ev, currRtt)
+				continue
+			}
+
+			select {
+			case <-time.After(wait):
+				continue
+			case <-stopPattern:
+				return
+			}
+		}
+	}
+}
+
+func writeMeasureMsg(
 	name string,
 	id uint32,
 	out *ipc.Ipc,
@@ -220,7 +193,7 @@ func writeAckMsg(
 ) {
 	err := out.SendMeasureMsg(id, ack, rtt, 0, 0)
 	if err != nil {
-		log.WithFields(log.Fields{"ack": ack, "name": name, "id": id, "where": "notify.writeAckMsg"}).Warn(err)
+		log.WithFields(log.Fields{"ack": ack, "name": name, "id": id, "where": "notify.writeMeasureMsg"}).Warn(err)
 		return
 	}
 }

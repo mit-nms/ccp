@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"ccp/ccpFlow/pattern"
 	"ccp/ipcBackend"
 
 	log "github.com/sirupsen/logrus"
@@ -42,6 +43,10 @@ func (d *MockBackend) SendMsg(msg ipcbackend.Msg) error {
 		}).Warn("failed to serialize message")
 		return err
 	}
+
+	log.WithFields(log.Fields{
+		"msg": s,
+	}).Info("sending message")
 
 	go func() {
 		d.ch <- s
@@ -128,72 +133,6 @@ func TestEncodeMeasureMsg(t *testing.T) {
 	}
 }
 
-func TestEncodeCwndMsg(t *testing.T) {
-	i, err := testSetup()
-	if err != nil {
-		t.Error(err)
-		return
-	}
-
-	outMsgCh, _ := i.ListenSetMsg()
-	i.SendCwndMsg(
-		testNum,
-		testNum,
-	)
-
-	select {
-	case out := <-outMsgCh:
-		if out.SocketId() != testNum ||
-			out.Set() != testNum ||
-			out.Mode() != "cwnd" {
-			t.Errorf(
-				"wrong message\ngot (%v, %v, %v)\nexpected (%v, %v, %v)",
-				out.SocketId(),
-				out.Set(),
-				out.Mode(),
-				testNum,
-				testNum,
-				"cwnd",
-			)
-		}
-	case <-time.After(time.Second):
-		t.Error("timed out")
-	}
-}
-
-func TestEncodeRateMsg(t *testing.T) {
-	i, err := testSetup()
-	if err != nil {
-		t.Error(err)
-		return
-	}
-
-	outMsgCh, _ := i.ListenSetMsg()
-	i.SendRateMsg(
-		testNum,
-		testNum,
-	)
-
-	select {
-	case out := <-outMsgCh:
-		if out.SocketId() != testNum ||
-			out.Set() != testNum ||
-			out.Mode() != "rate" {
-			t.Errorf(
-				"wrong message\ngot (%v, %v, %v)\nexpected (%v, %v, %v)",
-				out.SocketId(),
-				out.Set(),
-				out.Mode(),
-				testNum,
-				testNum,
-				"rate",
-			)
-		}
-	case <-time.After(time.Second):
-		t.Error("timed out")
-	}
-}
-
 func TestEncodeCreateMsg(t *testing.T) {
 	i, err := testSetup()
 	if err != nil {
@@ -261,6 +200,94 @@ func TestEncodeDropMsg(t *testing.T) {
 				testNum,
 				testString,
 			)
+		}
+	case <-time.After(time.Second):
+		t.Error("timed out")
+	}
+}
+
+func TestEncodePatternMsg(t *testing.T) {
+	i, err := testSetup()
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	outMsgCh, _ := i.ListenPatternMsg()
+	p, err := pattern.
+		NewPattern().
+		Cwnd(testNum).
+		WaitRtts(1.0).
+		Report().
+		Compile()
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	err = i.SendPatternMsg(testNum, p)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	select {
+	case out := <-outMsgCh:
+		if out.SocketId() != testNum {
+			t.Errorf(
+				"wrong message\ngot sid (%v)\nexpected (%v)",
+				out.SocketId(),
+				testNum,
+			)
+			return
+		}
+
+		if len(out.Pattern().Sequence) != 3 {
+			t.Errorf(
+				"wrong pattern length\ngot %v\nexpected %v",
+				len(out.Pattern().Sequence),
+				3,
+			)
+			return
+		}
+
+		for i, ev := range out.Pattern().Sequence {
+			switch i {
+			case 0: // cwnd
+				if ev.Type != pattern.SETCWNDABS || ev.Cwnd != testNum {
+					t.Errorf(
+						"wrong message\ngot event %d (type %v, cwnd %d)\nexpected (%v, %v)",
+						i,
+						ev.Type,
+						ev.Cwnd,
+						pattern.SETCWNDABS,
+						testNum,
+					)
+					return
+				}
+			case 1: // WaitRtts
+				if ev.Type != pattern.WAITREL || ev.Factor != 1.0 {
+					t.Errorf(
+						"wrong message\ngot event %d (type %v, factor %d)\nexpected (%v, %v)",
+						i,
+						ev.Type,
+						ev.Factor,
+						pattern.WAITREL,
+						1.0,
+					)
+					return
+				}
+			case 2: // Report
+				if ev.Type != pattern.REPORT {
+					t.Errorf(
+						"wrong message\ngot event %d type %d\nexpected %v",
+						i,
+						ev.Type,
+						pattern.REPORT,
+					)
+					return
+				}
+			}
 		}
 	case <-time.After(time.Second):
 		t.Error("timed out")

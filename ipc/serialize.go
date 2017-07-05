@@ -19,7 +19,6 @@ const (
 	CREATE msgType = iota
 	MEASURE
 	DROP
-	SET
 	PATTERN
 )
 
@@ -104,10 +103,6 @@ func msgReader(buf []byte) (msg ipcMsg, err error) {
 		numU32 = 2
 		numU64 = 2
 		hasStr = false
-	case SET:
-		numU32 = 1
-		numU64 = 0
-		hasStr = true
 	case PATTERN:
 		numU32 = 1
 		numU64 = 0
@@ -173,12 +168,6 @@ func (i *Ipc) demux(ch chan []byte) {
 				startSeq: ipcm.u32s[0],
 				congAlg:  ipcm.str,
 			}
-		case SET:
-			i.SetNotify <- SetMsg{
-				socketId:   ipcm.socketId,
-				cwndOrRate: ipcm.u32s[0],
-				mode:       ipcm.str,
-			}
 		case PATTERN:
 			p, err := deserializePattern(ipcm.str, ipcm.u32s[0])
 			if err != nil {
@@ -206,9 +195,6 @@ func msgWriter(msg ipcMsg) ([]byte, error) {
 		// + 2 uint32, + 2 uint64, no string
 		// 6 + 8 + 16 = 30
 		msg.len = 30
-	case msg.typ == SET && len(msg.u32s) == 1 && len(msg.u64s) == 0 && msg.str != "":
-		// + 1 uint32, + string
-		msg.len = 10 + uint8(len(msg.str))
 	case msg.typ == PATTERN && len(msg.u32s) == 1 && len(msg.u64s) == 0 && msg.str != "":
 		// + 1 uint32, + string
 		msg.len = 10 + uint8(len(msg.str))
@@ -251,27 +237,29 @@ func serializePatternEvent(ev flowPattern.PatternEvent) (buf []byte, err error) 
 	var value uint32
 	switch ev.Type {
 	case flowPattern.SETRATEABS:
-		value = ev.Value
+		value = uint32(ev.Rate * 100)
+
+	case flowPattern.SETCWNDABS:
+		value = ev.Cwnd
+
+	case flowPattern.SETRATEREL:
 		fallthrough
 	case flowPattern.WAITREL:
-		value = ev.Value
-		fallthrough
-	case flowPattern.SETCWNDABS:
-		value = ev.Value
-		fallthrough
-	case flowPattern.SETRATEREL:
-		value = ev.Value
-		fallthrough
+		value = uint32(ev.Factor * 100)
+
 	case flowPattern.WAITABS:
 		value = uint32(ev.Duration.Nanoseconds() / 1e3)
-		err = binary.Write(b, binary.LittleEndian, uint8(6))
-		err = binary.Write(b, binary.LittleEndian, value)
+
 	case flowPattern.REPORT:
 		err = binary.Write(b, binary.LittleEndian, uint8(2))
+		goto ret
 	default:
 		err = fmt.Errorf("unknown pattern-event type: %v", ev.Type)
 	}
 
+	err = binary.Write(b, binary.LittleEndian, uint8(6))
+	err = binary.Write(b, binary.LittleEndian, value)
+ret:
 	buf = b.Bytes()
 	return
 }
@@ -319,15 +307,15 @@ func deserializePattern(msg string, numEvents uint32) (pat *flowPattern.Pattern,
 
 		switch flowPattern.PatternEventType(evType) {
 		case flowPattern.SETRATEABS:
-			fallthrough
+			pat = pat.Rate(float32(evVal) / 100.0)
 		case flowPattern.SETRATEREL:
 			pat = pat.RelativeRate(float32(evVal) / 100.0)
-		case flowPattern.WAITREL:
-			pat = pat.RelativeWait(float32(evVal) / 100.0)
 		case flowPattern.SETCWNDABS:
-			pat = pat.AbsoluteCwnd(evVal)
+			pat = pat.Cwnd(evVal)
+		case flowPattern.WAITREL:
+			pat = pat.WaitRtts(float32(evVal) / 100.0)
 		case flowPattern.WAITABS:
-			pat = pat.AbsoluteWait(time.Duration(evVal) * time.Microsecond)
+			pat = pat.Wait(time.Duration(evVal) * time.Microsecond)
 		}
 	}
 

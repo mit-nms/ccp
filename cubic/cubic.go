@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"ccp/ccpFlow"
+	"ccp/ccpFlow/pattern"
 	"ccp/ipc"
 
 	log "github.com/sirupsen/logrus"
@@ -19,6 +20,8 @@ type Cubic struct {
 
 	cwnd    float32
 	lastAck uint32
+    lastDrop time.Time
+    rtt time.Duration
 	sockid  uint32
 	ipc     ipc.SendOnly
 
@@ -55,9 +58,11 @@ func (c *Cubic) Create(
 	c.lastAck = 0
 	c.ipc = send
 	//Pseudo code doesn't specify how to intialize these
-	c.initCwnd = float32(pktsz * 10)
-	c.cwnd = float32(pktsz * startCwnd)
+	c.initCwnd = float32(10)
+	c.cwnd = float32(startCwnd)
 	c.ssthresh = 100
+    c.lastDrop = time.Now()
+    c.rtt = time.Duration(0)
 	//not sure about what this value should be
 	c.cwnd_cnt = 0
 
@@ -66,6 +71,8 @@ func (c *Cubic) Create(
 	c.fast_convergence = true
 	c.C = 0.4
 	c.cubic_reset()
+
+	c.newPattern()
 }
 
 func (c *Cubic) cubic_reset() {
@@ -79,7 +86,12 @@ func (c *Cubic) cubic_reset() {
 }
 
 func (c *Cubic) GotMeasurement(m ccpFlow.Measurement) {
-	RTT := float32(m.Rtt.Seconds())
+    if m.Ack < c.lastAck {
+        return
+    }
+
+    c.rtt = m.Rtt
+	RTT := float32(c.rtt.Seconds())
 	newBytesAcked := float32(m.Ack - c.lastAck)
 	no_of_acks := int(newBytesAcked / c.pktSize)
 	for i := 0; i < no_of_acks; i++ {
@@ -101,7 +113,7 @@ func (c *Cubic) GotMeasurement(m ccpFlow.Measurement) {
 	}
 
 	// notify increased cwnd
-	c.notifyCwnd()
+	c.newPattern()
 
 	log.WithFields(log.Fields{
 		"gotAck":      m.Ack,
@@ -115,6 +127,12 @@ func (c *Cubic) GotMeasurement(m ccpFlow.Measurement) {
 }
 
 func (c *Cubic) Drop(ev ccpFlow.DropEvent) {
+    //if time.Since(c.lastDrop) <= c.rtt {
+    //    return
+    //}
+
+    //c.lastDrop = time.Now()
+
 	switch ev {
 	case ccpFlow.DupAck:
 		c.epoch_start = 0
@@ -141,7 +159,7 @@ func (c *Cubic) Drop(ev ccpFlow.DropEvent) {
 		"event":    ev,
 	}).Info("[cubic] drop")
 
-	c.notifyCwnd()
+	c.newPattern()
 }
 
 func (c *Cubic) cubic_update() {
@@ -184,8 +202,22 @@ func (c *Cubic) cubic_tcp_friendliness() {
 	}
 }
 
-func (c *Cubic) notifyCwnd() {
-	err := c.ipc.SendCwndMsg(c.sockid, uint32(c.cwnd*c.pktSize))
+func (c *Cubic) newPattern() {
+	staticPattern, err := pattern.
+		NewPattern().
+		Cwnd(uint32(c.cwnd * c.pktSize)).
+		Wait(time.Duration(10) * time.Millisecond).
+		Report().
+		Compile()
+	if err != nil {
+		log.WithFields(log.Fields{
+			"err":  err,
+			"cwnd": c.cwnd * c.pktSize,
+		}).Info("make cwnd msg failed")
+		return
+	}
+
+	err = c.ipc.SendPatternMsg(c.sockid, staticPattern)
 	if err != nil {
 		log.WithFields(log.Fields{"cwnd": c.cwnd * c.pktSize, "name": c.sockid}).Warn(err)
 	}

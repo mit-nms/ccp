@@ -21,7 +21,6 @@ const (
 type Ipc struct {
 	CreateNotify  chan CreateMsg
 	MeasureNotify chan MeasureMsg
-	SetNotify     chan SetMsg
 	DropNotify    chan DropMsg
 	PatternNotify chan PatternMsg
 
@@ -30,8 +29,6 @@ type Ipc struct {
 
 // handle of IPC to pass to CC implementations
 type SendOnly interface {
-	SendRateMsg(socketId uint32, rate uint32) error
-	SendCwndMsg(socketId uint32, cwnd uint32) error
 	SendPatternMsg(socketId uint32, pattern *flowPattern.Pattern) error
 }
 
@@ -90,7 +87,6 @@ func SetupWithBackend(back ipcbackend.Backend) (*Ipc, error) {
 	i := &Ipc{
 		CreateNotify:  make(chan CreateMsg),
 		MeasureNotify: make(chan MeasureMsg),
-		SetNotify:     make(chan SetMsg),
 		DropNotify:    make(chan DropMsg),
 		PatternNotify: make(chan PatternMsg),
 		backend:       back,

@@ -5,7 +5,7 @@ import (
 )
 
 func TestFactor(t *testing.T) {
-    p, err := NewPattern().AbsoluteCwnd(42).RelativeWait(1.0).Compile()
+    p, err := NewPattern().Cwnd(42).WaitRtts(1.0).Compile()
     if err != nil {
         t.Error(err)
     }

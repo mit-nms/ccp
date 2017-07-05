@@ -2,6 +2,7 @@ package vegas
 
 import (
 	"ccp/ccpFlow"
+	"ccp/ccpFlow/pattern"
 	"ccp/ipc"
 
 	log "github.com/sirupsen/logrus"
@@ -46,10 +47,16 @@ func (v *Vegas) Create(
 	v.baseRTT = 0
 	v.alpha = 2
 	v.beta = 4
+
+	v.newPattern()
 }
 
 func (v *Vegas) GotMeasurement(m ccpFlow.Measurement) {
-	RTT := float32(m.Rtt.Seconds())
+    if m.Ack < v.lastAck {
+        return
+    }
+	
+    RTT := float32(m.Rtt.Seconds())
 	if v.baseRTT <= 0 || RTT < v.baseRTT {
 		v.baseRTT = RTT
 	}
@@ -62,7 +69,7 @@ func (v *Vegas) GotMeasurement(m ccpFlow.Measurement) {
 		v.cwnd -= v.pktSize
 	}
 
-	v.notifyCwnd()
+	v.newPattern()
 
 	log.WithFields(log.Fields{
 		"gotAck":      m.Ack,
@@ -95,11 +102,25 @@ func (v *Vegas) Drop(ev ccpFlow.DropEvent) {
 		"event":    ev,
 	}).Info("[vegas] drop")
 
-	v.notifyCwnd()
+	v.newPattern()
 }
 
-func (v *Vegas) notifyCwnd() {
-	err := v.ipc.SendCwndMsg(v.sockid, uint32(v.cwnd))
+func (v *Vegas) newPattern() {
+	staticPattern, err := pattern.
+		NewPattern().
+		Cwnd(uint32(v.cwnd)).
+		WaitRtts(0.5).
+		Report().
+		Compile()
+	if err != nil {
+		log.WithFields(log.Fields{
+			"err":  err,
+			"cwnd": v.cwnd,
+		}).Info("make cwnd msg failed")
+		return
+	}
+
+	err = v.ipc.SendPatternMsg(v.sockid, staticPattern)
 	if err != nil {
 		log.WithFields(log.Fields{"cwnd": v.cwnd, "name": v.sockid}).Warn(err)
 	}
