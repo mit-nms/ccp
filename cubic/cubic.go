@@ -9,7 +9,7 @@ import (
 	"ccp/ccpFlow"
 	"ccp/ipc"
 
-	log "github.com/Sirupsen/logrus"
+	log "github.com/sirupsen/logrus"
 )
 
 // implement ccpFlow.Flow interface

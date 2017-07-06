@@ -7,7 +7,7 @@ import (
 
 	"ccp/udpDataplane"
 
-	log "github.com/Sirupsen/logrus"
+	log "github.com/sirupsen/logrus"
 )
 
 func main() {

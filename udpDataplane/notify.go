@@ -7,7 +7,7 @@ import (
 	"ccp/ipc"
 	"ccp/ipcBackend"
 
-	log "github.com/Sirupsen/logrus"
+	log "github.com/sirupsen/logrus"
 )
 
 func (sock *Sock) setupIpc() error {

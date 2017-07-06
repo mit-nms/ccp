@@ -9,7 +9,7 @@ import (
 	"ccp/reno"
 	"ccp/vegas"
 
-	log "github.com/Sirupsen/logrus"
+	log "github.com/sirupsen/logrus"
 )
 
 var datapath = flag.String("datapath", "udp", "which IPC backend to use (udp|kernel)")

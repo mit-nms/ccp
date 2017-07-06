@@ -8,7 +8,7 @@ import (
 
 	"ccp/ipc"
 
-	log "github.com/Sirupsen/logrus"
+	log "github.com/sirupsen/logrus"
 )
 
 func TestBasicTransfer(t *testing.T) {

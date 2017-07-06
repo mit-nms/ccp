@@ -12,7 +12,7 @@ import (
 	"ccp/ipc"
 	"ccp/reno"
 
-	log "github.com/Sirupsen/logrus"
+	log "github.com/sirupsen/logrus"
 )
 
 func init() {

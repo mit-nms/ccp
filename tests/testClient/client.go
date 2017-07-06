@@ -7,7 +7,7 @@ import (
 
 	"ccp/udpDataplane"
 
-	log "github.com/Sirupsen/logrus"
+	log "github.com/sirupsen/logrus"
 )
 
 var ip = flag.String("ip", "127.0.0.1", "ip address to connect to")
