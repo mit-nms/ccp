@@ -83,71 +83,75 @@ func (sock *Sock) handleAck(rcvd *Packet) {
 		return
 	}
 
-	if rcvd.AckNo >= firstUnacked {
-		lastAcked, rtt, err := sock.inFlight.rcvdPkt(time.Now(), rcvd)
-		if err != nil {
-			// there were no packets in flight
-			// so we got an ack to a packet we didn't send
-			log.WithFields(log.Fields{
-				"name":         sock.name,
-				"firstUnacked": firstUnacked,
-				"rcvd.ackno":   rcvd.AckNo,
-				"inFlight":     sock.inFlight.order,
-			}).Panic("unknown packet")
-		}
+	if rcvd.AckNo < firstUnacked {
+		return
+	}
 
-		if lastAcked == sock.lastAckedSeqNo && sock.nextSeqNo > lastAcked {
-			sock.dupAckCnt++
+	lastAcked, rtt, err := sock.inFlight.rcvdPkt(time.Now(), rcvd)
+	if err != nil {
+		// there were no packets in flight
+		// so we got an ack to a packet we didn't send
+		log.WithFields(log.Fields{
+			"name":         sock.name,
+			"firstUnacked": firstUnacked,
+			"rcvd.ackno":   rcvd.AckNo,
+			"inFlight":     sock.inFlight.order,
+		}).Panic("unknown packet")
+	}
+
+	if lastAcked == sock.lastAckedSeqNo && sock.nextSeqNo > lastAcked {
+		sock.dupAckCnt++
+		log.WithFields(log.Fields{
+			"name":           sock.name,
+			"sock.lastAcked": lastAcked,
+			"firstUnacked":   firstUnacked,
+			"rcvd.ackno":     rcvd.AckNo,
+			"inFlight":       sock.inFlight.order,
+			"dupAcks":        sock.dupAckCnt,
+			"sack":           rcvd.Sack,
+		}).Debug("dup ack")
+
+		if sock.dupAckCnt >= 3 {
+			// dupAckCnt >= 3 -> packet drop
 			log.WithFields(log.Fields{
 				"name":           sock.name,
+				"sock.dupAckCnt": sock.dupAckCnt,
 				"sock.lastAcked": lastAcked,
-				"firstUnacked":   firstUnacked,
-				"rcvd.ackno":     rcvd.AckNo,
-				"inFlight":       sock.inFlight.order,
-				"dupAcks":        sock.dupAckCnt,
-			}).Debug("dup ack")
-
-			if sock.dupAckCnt >= 3 {
-				// dupAckCnt >= 3 -> packet drop
-				log.WithFields(log.Fields{
-					"name":           sock.name,
-					"sock.dupAckCnt": sock.dupAckCnt,
-					"sock.lastAcked": lastAcked,
-				}).Debug("drop detected")
-				sock.inFlight.drop(lastAcked)
-				select {
-				case sock.notifyDrops <- notifyDrop{ev: "3xdupack", lastAck: lastAcked}:
-				default:
-				}
-			}
-
+			}).Debug("drop detected")
+			sock.inFlight.drop(lastAcked, rcvd)
 			select {
-			case sock.shouldTx <- struct{}{}:
+			case sock.notifyDrops <- notifyDrop{ev: "3xdupack", lastAck: lastAcked}:
 			default:
 			}
-			return
-		} else {
-			sock.dupAckCnt = 0
 		}
 
-		sock.lastAckedSeqNo = lastAcked
 		select {
 		case sock.shouldTx <- struct{}{}:
 		default:
 		}
 
-		log.WithFields(log.Fields{
-			"name":       sock.name,
-			"lastAcked":  sock.lastAckedSeqNo,
-			"rcvd.ackno": rcvd.AckNo,
-			"inFlight":   sock.inFlight.order,
-			"rtt":        rtt,
-		}).Debug("new ack")
+		return
+	} else {
+		sock.dupAckCnt = 0
+	}
 
-		select {
-		case sock.notifyAcks <- notifyAck{ack: lastAcked, rtt: rtt}:
-		default:
-		}
+	sock.lastAckedSeqNo = lastAcked
+	select {
+	case sock.shouldTx <- struct{}{}:
+	default:
+	}
+
+	log.WithFields(log.Fields{
+		"name":       sock.name,
+		"lastAcked":  sock.lastAckedSeqNo,
+		"rcvd.ackno": rcvd.AckNo,
+		"inFlight":   sock.inFlight.order,
+		"rtt":        rtt,
+	}).Info("new ack")
+
+	select {
+	case sock.notifyAcks <- notifyAck{ack: lastAcked, rtt: rtt}:
+	default:
 	}
 }
 

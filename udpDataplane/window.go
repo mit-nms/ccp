@@ -82,13 +82,18 @@ func (w *window) addPkt(t time.Time, p *Packet) {
 }
 
 func remove(ord []uint32, vals []uint32) (newOrd []uint32) {
-	newOrd = ord[:]
-	for _, s := range vals {
-		for i, v := range newOrd {
-			if v == s {
-				newOrd = append(newOrd[:i], newOrd[i+1:]...)
+	newOrd = make([]uint32, 0)
+	for _, o := range ord {
+		found := false
+		for _, rem := range vals {
+			if o == rem {
+				found = true
 				break
 			}
+		}
+
+		if !found {
+			newOrd = append(newOrd, o)
 		}
 	}
 
@@ -101,6 +106,8 @@ func (w *window) rcvdPkt(
 	t time.Time,
 	p *Packet,
 ) (seqNo uint32, rtt time.Duration, err error) {
+	rtts := make([]time.Duration, 0)
+
 	seqNo, err = w.start()
 	if err != nil {
 		return
@@ -113,7 +120,7 @@ func (w *window) rcvdPkt(
 	for i, seq := range w.order {
 		ind = i + 1
 		if seq < p.AckNo {
-			rtt = t.Sub(w.pkts[seq].t)
+			rtts = append(rtts, t.Sub(w.pkts[seq].t))
 			seqNo = seq + uint32(w.pkts[seq].p.Length)
 			delete(w.pkts, seq)
 			continue
@@ -130,7 +137,7 @@ func (w *window) rcvdPkt(
 		if v {
 			seq := p.AckNo + uint32(1460*(i+1))
 			e := w.pkts[seq]
-			rtt = t.Sub(e.t)
+			rtts = append(rtts, t.Sub(e.t))
 			delete(w.pkts, seq)
 			removeVals = append(removeVals, seq)
 		}
@@ -146,6 +153,13 @@ func (w *window) rcvdPkt(
 		}).Panic("window out of sync")
 	}
 
+	rtt = time.Minute
+	for _, r := range rtts {
+		if r < rtt {
+			rtt = r
+		}
+	}
+
 	return
 }
 
@@ -159,13 +173,23 @@ func (w *window) timeout() {
 	}
 }
 
-func (w *window) drop(seq uint32) {
+func (w *window) drop(dropped uint32, p *Packet) {
+	droppedSeqs := []uint32{dropped}
+	for i, v := range p.Sack {
+		if !v {
+			seq := p.AckNo + uint32(1460*(i+1))
+			droppedSeqs = append(droppedSeqs, seq)
+		}
+	}
+
 	w.mux.Lock()
 	defer w.mux.Unlock()
 
-	if ent, ok := w.pkts[seq]; ok {
-		ent.active = false
-		w.pkts[seq] = ent
+	for _, seq := range droppedSeqs {
+		if ent, ok := w.pkts[seq]; ok {
+			ent.active = false
+			w.pkts[seq] = ent
+		}
 	}
 }
 
