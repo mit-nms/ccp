@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 
-	"github.mit.edu/hari/nimbus-cc/packetops"
+	"github.com/akshayknarayan/udp/packetops"
 )
 
 // 1463 = 1500 - 28 (ip + udp) - 12 (my header)

@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"testing"
 
-	"github.mit.edu/hari/nimbus-cc/packetops"
+	"github.com/akshayknarayan/udp/packetops"
 )
 
 func equal(a []bool, b []bool) bool {
