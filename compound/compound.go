@@ -11,7 +11,17 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-//Specification from https://tools.ietf.org/html/draft-sridharan-tcpm-ctcp-02#section-3 and http://www.dcs.gla.ac.uk/~lewis/CTCP.pdf
+// Specification from https://tools.ietf.org/html/draft-sridharan-tcpm-ctcp-02#section-3 and http://www.dcs.gla.ac.uk/~lewis/CTCP.pdf
+// Add a "delay window" (dwnd) component to standard TCP.
+// wnd = min(cwnd + dwnd)
+// on ack: cwnd = cwnd + 1/(cwnd+dwnd)
+// set dwnd according to a binomial function: 
+// dwnd(t+1) = 
+//    dwnd(t) + alpha*dwnd(t)^k -1 if diff < gamma
+//    dwnd(t) - eta*diff           if diff >= gamma
+//    dwnd(t) * (1-beta)             if diff < gamma
+// alpha = 1/8, beta = 1/2, eta = 1, k = 0.75
+// dwnd in packets.
 
 // implement ccpFlow.Flow interface
 type Compound struct {
@@ -60,6 +70,7 @@ func (c *Compound) Create(
 	} else {
 		c.lastAck = startSeq - 1
 	}
+
 	c.baseRTT = 0
 	c.alpha = 0.125
 	c.beta = 0.5
@@ -84,10 +95,11 @@ func (c *Compound) GotMeasurement(m ccpFlow.Measurement) {
 	}
 
 	newBytesAcked := float32(m.Ack - c.lastAck)
+
 	// increase cwnd by 1 / cwnd per packet
 	c.cwnd += float32(c.pktSize) * (newBytesAcked / c.wnd)
 
-	//dwnd update
+	// dwnd update
 	expected := c.wnd / c.baseRTT
 	actual := c.wnd / RTT
 	diff := (expected - actual) * c.baseRTT
@@ -101,14 +113,16 @@ func (c *Compound) GotMeasurement(m ccpFlow.Measurement) {
 	} else {
 		increment = -c.eta * diff
 	}
+
 	c.dwnd += increment * (newBytesAcked / c.wnd)
 	if c.dwnd < 0 {
 		c.dwnd = 0
 	}
+
 	//wnd update
 	c.wnd = c.cwnd + c.dwnd
-	// notify increased cwnd
 
+	// notify increased cwnd
 	c.newPattern()
 
 	log.WithFields(log.Fields{
@@ -118,9 +132,7 @@ func (c *Compound) GotMeasurement(m ccpFlow.Measurement) {
 		"newlyAcked":  newBytesAcked,
 	}).Info("[compound] got ack")
 
-
 	c.lastAck = m.Ack
-
 	return
 }
 
@@ -129,6 +141,7 @@ func (c *Compound) Drop(ev ccpFlow.DropEvent) {
     //    return
     //}
     //c.lastDrop = time.Now()
+
 	oldCwnd := c.wnd
 	switch ev {
 	case ccpFlow.DupAck:
@@ -136,12 +149,15 @@ func (c *Compound) Drop(ev ccpFlow.DropEvent) {
 		if c.cwnd < c.initCwnd {
 			c.cwnd = c.initCwnd
 		}
+
 		c.dwnd = c.wnd*(1-c.beta) - c.cwnd
 		if c.dwnd < 0 {
 			c.dwnd = 0
 		}
+
 		c.wnd = c.cwnd + c.dwnd
-		//gamma auto tuning
+
+		// gamma auto tuning
 		if c.diff_reno >= 0 {
 			g_sample := 0.75 * (c.diff_reno / float32(c.pktSize))
 			lambda := float32(0.8) //couldn't find how to set this
@@ -151,6 +167,7 @@ func (c *Compound) Drop(ev ccpFlow.DropEvent) {
 			} else if c.gamma > c.gamma_high {
 				c.gamma = c.gamma_high
 			}
+
 			c.diff_reno = -1
 		}
 	case ccpFlow.Timeout:
