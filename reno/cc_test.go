@@ -61,9 +61,6 @@ func TestReno(t *testing.T) {
 	} else if p.Sequence[0].Type != flowPattern.SETCWNDABS {
 		t.Errorf("expected event type %d, got %d", flowPattern.SETCWNDABS, p.Sequence[0].Type)
 		return
-	} else if p.Sequence[0].Cwnd != 43860 {
-		t.Errorf("expected cwnd 43860, got %d", p.Sequence[0].Cwnd)
-		return
 	}
 
 	t.Log("isolated drop")
@@ -74,9 +71,6 @@ func TestReno(t *testing.T) {
 		return
 	} else if p.Sequence[0].Type != flowPattern.SETCWNDABS {
 		t.Errorf("expected event type %d, got %d", flowPattern.SETCWNDABS, p.Sequence[0].Type)
-		return
-	} else if p.Sequence[0].Cwnd != 21930 {
-		t.Errorf("expected cwnd 21930, got %d", p.Sequence[0].Cwnd)
 		return
 	}
 

@@ -1,6 +1,8 @@
 package vegas
 
 import (
+	"math"
+
 	"ccp/ccpFlow"
 	"ccp/ccpFlow/pattern"
 	"ccp/ipc"
@@ -10,7 +12,7 @@ import (
 
 // implement ccpFlow.Flow interface
 type Vegas struct {
-	pktSize  float32
+	pktSize  uint32
 	initCwnd float32
 
 	cwnd    float32
@@ -36,7 +38,7 @@ func (v *Vegas) Create(
 ) {
 	v.sockid = socketid
 	v.ipc = send
-	v.pktSize = float32(pktsz)
+	v.pktSize = pktsz
 	if startSeq == 0 {
 		v.lastAck = startSeq
 	} else {
@@ -52,21 +54,30 @@ func (v *Vegas) Create(
 }
 
 func (v *Vegas) GotMeasurement(m ccpFlow.Measurement) {
-    if m.Ack < v.lastAck {
-        return
-    }
-	
-    RTT := float32(m.Rtt.Seconds())
+	// reordering of messsages
+	// if within 10 packets, assume no integer overflow
+	if m.Ack < v.lastAck && m.Ack > v.lastAck-v.pktSize*10 {
+		return
+	}
+
+	// handle integer overflow / sequence wraparound
+	var newBytesAcked uint64
+	if m.Ack < v.lastAck {
+		newBytesAcked = uint64(math.MaxUint32) + uint64(m.Ack) - uint64(v.lastAck)
+	} else {
+		newBytesAcked = uint64(m.Ack) - uint64(v.lastAck)
+	}
+
+	RTT := float32(m.Rtt.Seconds())
 	if v.baseRTT <= 0 || RTT < v.baseRTT {
 		v.baseRTT = RTT
 	}
-	newBytesAcked := float32(m.Ack - v.lastAck)
 
-	inQueue := (v.cwnd * (RTT - v.baseRTT)) / (RTT * v.pktSize)
+	inQueue := (v.cwnd * (RTT - v.baseRTT)) / (RTT * float32(v.pktSize))
 	if inQueue <= v.alpha {
-		v.cwnd += v.pktSize
+		v.cwnd += float32(v.pktSize)
 	} else if inQueue >= v.beta {
-		v.cwnd -= v.pktSize
+		v.cwnd -= float32(v.pktSize)
 	}
 
 	v.newPattern()
@@ -87,9 +98,9 @@ func (v *Vegas) GotMeasurement(m ccpFlow.Measurement) {
 func (v *Vegas) Drop(ev ccpFlow.DropEvent) {
 	switch ev {
 	case ccpFlow.DupAck:
-		v.cwnd -= v.pktSize
+		v.cwnd -= float32(v.pktSize)
 	case ccpFlow.Timeout:
-		v.cwnd -= v.pktSize
+		v.cwnd -= float32(v.pktSize)
 	default:
 		log.WithFields(log.Fields{
 			"event": ev,

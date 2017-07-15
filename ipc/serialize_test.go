@@ -268,7 +268,7 @@ func TestEncodePatternMsg(t *testing.T) {
 			case 1: // WaitRtts
 				if ev.Type != pattern.WAITREL || ev.Factor != 1.0 {
 					t.Errorf(
-						"wrong message\ngot event %d (type %v, factor %d)\nexpected (%v, %v)",
+						"wrong message\ngot event %d (type %v, factor %v)\nexpected (%v, %v)",
 						i,
 						ev.Type,
 						ev.Factor,

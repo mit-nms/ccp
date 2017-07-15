@@ -15,15 +15,15 @@ import (
 
 // implement ccpFlow.Flow interface
 type Cubic struct {
-	pktSize  float32
+	pktSize  uint32
 	initCwnd float32
 
-	cwnd    float32
-	lastAck uint32
-    lastDrop time.Time
-    rtt time.Duration
-	sockid  uint32
-	ipc     ipc.SendOnly
+	cwnd     float32
+	lastAck  uint32
+	lastDrop time.Time
+	rtt      time.Duration
+	sockid   uint32
+	ipc      ipc.SendOnly
 
 	//state for cubic
 	ssthresh         float32
@@ -54,15 +54,15 @@ func (c *Cubic) Create(
 	startCwnd uint32,
 ) {
 	c.sockid = socketid
-	c.pktSize = float32(pktsz)
+	c.pktSize = pktsz
 	c.lastAck = 0
 	c.ipc = send
 	//Pseudo code doesn't specify how to intialize these
 	c.initCwnd = float32(10)
 	c.cwnd = float32(startCwnd)
-	c.ssthresh = 100
-    c.lastDrop = time.Now()
-    c.rtt = time.Duration(0)
+	c.ssthresh = 1000
+	c.lastDrop = time.Now()
+	c.rtt = time.Duration(0)
 	//not sure about what this value should be
 	c.cwnd_cnt = 0
 
@@ -86,15 +86,24 @@ func (c *Cubic) cubic_reset() {
 }
 
 func (c *Cubic) GotMeasurement(m ccpFlow.Measurement) {
-    if m.Ack < c.lastAck {
-        return
-    }
+	// reordering of messsages
+	// if within 10 packets, assume no integer overflow
+	if m.Ack < c.lastAck && m.Ack > c.lastAck-c.pktSize*10 {
+		return
+	}
 
-    c.rtt = m.Rtt
+	// handle integer overflow / sequence wraparound
+	var newBytesAcked uint64
+	if m.Ack < c.lastAck {
+		newBytesAcked = uint64(math.MaxUint32) + uint64(m.Ack) - uint64(c.lastAck)
+	} else {
+		newBytesAcked = uint64(m.Ack) - uint64(c.lastAck)
+	}
+
+	c.rtt = m.Rtt
 	RTT := float32(c.rtt.Seconds())
-	newBytesAcked := float32(m.Ack - c.lastAck)
-	no_of_acks := int(newBytesAcked / c.pktSize)
-	for i := 0; i < no_of_acks; i++ {
+	no_of_acks := uint32(float32(newBytesAcked) / float32(c.pktSize))
+	for i := uint32(0); i < no_of_acks; i++ {
 		if c.dMin <= 0 || RTT < c.dMin {
 			c.dMin = RTT
 		}
@@ -117,7 +126,7 @@ func (c *Cubic) GotMeasurement(m ccpFlow.Measurement) {
 
 	log.WithFields(log.Fields{
 		"gotAck":      m.Ack,
-		"currCwnd":    c.cwnd * c.pktSize,
+		"currCwnd":    c.cwnd * float32(c.pktSize),
 		"currLastAck": c.lastAck,
 		"newlyAcked":  newBytesAcked,
 	}).Info("[cubic] got ack")
@@ -127,11 +136,11 @@ func (c *Cubic) GotMeasurement(m ccpFlow.Measurement) {
 }
 
 func (c *Cubic) Drop(ev ccpFlow.DropEvent) {
-    //if time.Since(c.lastDrop) <= c.rtt {
-    //    return
-    //}
+	//if time.Since(c.lastDrop) <= c.rtt {
+	//    return
+	//}
 
-    //c.lastDrop = time.Now()
+	//c.lastDrop = time.Now()
 
 	switch ev {
 	case ccpFlow.DupAck:
@@ -155,7 +164,7 @@ func (c *Cubic) Drop(ev ccpFlow.DropEvent) {
 	}
 
 	log.WithFields(log.Fields{
-		"currCwnd": c.cwnd * c.pktSize,
+		"currCwnd": c.cwnd * float32(c.pktSize),
 		"event":    ev,
 	}).Info("[cubic] drop")
 
@@ -205,21 +214,24 @@ func (c *Cubic) cubic_tcp_friendliness() {
 func (c *Cubic) newPattern() {
 	staticPattern, err := pattern.
 		NewPattern().
-		Cwnd(uint32(c.cwnd * c.pktSize)).
-		Wait(time.Duration(10) * time.Millisecond).
+		Cwnd(uint32(c.cwnd * float32(c.pktSize))).
+		WaitRtts(0.5).
 		Report().
 		Compile()
 	if err != nil {
 		log.WithFields(log.Fields{
 			"err":  err,
-			"cwnd": c.cwnd * c.pktSize,
+			"cwnd": c.cwnd * float32(c.pktSize),
 		}).Info("make cwnd msg failed")
 		return
 	}
 
 	err = c.ipc.SendPatternMsg(c.sockid, staticPattern)
 	if err != nil {
-		log.WithFields(log.Fields{"cwnd": c.cwnd * c.pktSize, "name": c.sockid}).Warn(err)
+		log.WithFields(log.Fields{
+			"cwnd": c.cwnd * float32(c.pktSize),
+			"name": c.sockid,
+		}).Warn(err)
 	}
 }
 

@@ -1,7 +1,8 @@
 package reno
 
 import (
-    "time"
+	"math"
+	"time"
 
 	"ccp/ccpFlow"
 	"ccp/ccpFlow/pattern"
@@ -15,10 +16,11 @@ type Reno struct {
 	pktSize  uint32
 	initCwnd float32
 
-	cwnd    float32
-	lastAck uint32
-    rtt time.Duration
-    lastDrop time.Time
+	ssthresh float32
+	cwnd     float32
+	lastAck  uint32
+	rtt      time.Duration
+	lastDrop time.Time
 
 	sockid uint32
 	ipc    ipc.SendOnly
@@ -38,10 +40,11 @@ func (r *Reno) Create(
 	r.sockid = socketid
 	r.ipc = send
 	r.pktSize = pktsz
+	r.ssthresh = float32(pktsz * 1000)
 	r.initCwnd = float32(pktsz * 10)
 	r.cwnd = float32(pktsz * startCwnd)
-    r.lastDrop = time.Now()
-    r.rtt  = time.Since(r.lastDrop)
+	r.lastDrop = time.Now()
+	r.rtt = time.Since(r.lastDrop)
 	if startSeq == 0 {
 		r.lastAck = startSeq
 	} else {
@@ -52,22 +55,37 @@ func (r *Reno) Create(
 }
 
 func (r *Reno) GotMeasurement(m ccpFlow.Measurement) {
-    if m.Ack < r.lastAck {
-        return
-    }
+	// reordering of messsages
+	// if within 10 packets, assume no integer overflow
+	if m.Ack < r.lastAck && m.Ack > r.lastAck-r.pktSize*10 {
+		return
+	}
 
-	newBytesAcked := float32(m.Ack - r.lastAck)
-	// increase cwnd by 1 / cwnd per packet
-	r.cwnd += float32(r.pktSize) * (newBytesAcked / r.cwnd)
+	// handle integer overflow / sequence wraparound
+	var newBytesAcked uint64
+	if m.Ack < r.lastAck {
+		newBytesAcked = uint64(math.MaxUint32) + uint64(m.Ack) - uint64(r.lastAck)
+	} else {
+		newBytesAcked = uint64(m.Ack) - uint64(r.lastAck)
+	}
+
+	if r.cwnd < r.ssthresh {
+		// increase cwnd by 1 per packet
+		r.cwnd += float32(newBytesAcked)
+	} else {
+		// increase cwnd by 1 / cwnd per packet
+		r.cwnd += float32(r.pktSize) * (float32(newBytesAcked) / r.cwnd)
+	}
+
 	// notify increased cwnd
 	r.newPattern()
-    r.rtt = m.Rtt
+	r.rtt = m.Rtt
 
 	log.WithFields(log.Fields{
-		"gotAck":      m.Ack,
-		"currCwnd":    r.cwnd,
-		"currLastAck": r.lastAck,
-		"newlyAcked":  newBytesAcked,
+		"gotAck":       m.Ack,
+		"currCwndPkts": r.cwnd / float32(r.pktSize),
+		"currLastAck":  r.lastAck,
+		"newlyAcked":   newBytesAcked,
 	}).Info("[reno] got ack")
 
 	r.lastAck = m.Ack
@@ -75,21 +93,23 @@ func (r *Reno) GotMeasurement(m ccpFlow.Measurement) {
 }
 
 func (r *Reno) Drop(ev ccpFlow.DropEvent) {
-    if time.Since(r.lastDrop) <= r.rtt {
-        return
-    }
+	if time.Since(r.lastDrop) <= r.rtt {
+		return
+	}
 
-    r.lastDrop = time.Now()
+	r.lastDrop = time.Now()
 
 	oldCwnd := r.cwnd
 	switch ev {
 	case ccpFlow.DupAck:
 		r.cwnd /= 2
+		r.ssthresh = r.cwnd
 		if r.cwnd < r.initCwnd {
 			r.cwnd = r.initCwnd
 		}
 	case ccpFlow.Timeout:
 		r.cwnd = r.initCwnd
+		r.ssthresh /= 2
 	default:
 		log.WithFields(log.Fields{
 			"event": ev,

@@ -15,8 +15,8 @@ import (
 // Add a "delay window" (dwnd) component to standard TCP.
 // wnd = min(cwnd + dwnd)
 // on ack: cwnd = cwnd + 1/(cwnd+dwnd)
-// set dwnd according to a binomial function: 
-// dwnd(t+1) = 
+// set dwnd according to a binomial function:
+// dwnd(t+1) =
 //    dwnd(t) + alpha*dwnd(t)^k -1 if diff < gamma
 //    dwnd(t) - eta*diff           if diff >= gamma
 //    dwnd(t) * (1-beta)             if diff < gamma
@@ -85,8 +85,18 @@ func (c *Compound) Create(
 }
 
 func (c *Compound) GotMeasurement(m ccpFlow.Measurement) {
-	if m.Ack < c.lastAck {
+	// reordering of messsages
+	// if within 10 packets, assume no integer overflow
+	if m.Ack < c.lastAck && m.Ack > c.lastAck-c.pktSize*10 {
 		return
+	}
+
+	// handle integer overflow / sequence wraparound
+	var newBytesAcked uint64
+	if m.Ack < c.lastAck {
+		newBytesAcked = uint64(math.MaxUint32) + uint64(m.Ack) - uint64(c.lastAck)
+	} else {
+		newBytesAcked = uint64(m.Ack) - uint64(c.lastAck)
 	}
 
 	RTT := float32(m.Rtt.Seconds())
@@ -94,10 +104,8 @@ func (c *Compound) GotMeasurement(m ccpFlow.Measurement) {
 		c.baseRTT = RTT
 	}
 
-	newBytesAcked := float32(m.Ack - c.lastAck)
-
 	// increase cwnd by 1 / cwnd per packet
-	c.cwnd += float32(c.pktSize) * (newBytesAcked / c.wnd)
+	c.cwnd += float32(c.pktSize) * (float32(newBytesAcked) / c.wnd)
 
 	// dwnd update
 	expected := c.wnd / c.baseRTT
@@ -114,7 +122,7 @@ func (c *Compound) GotMeasurement(m ccpFlow.Measurement) {
 		increment = -c.eta * diff
 	}
 
-	c.dwnd += increment * (newBytesAcked / c.wnd)
+	c.dwnd += increment * (float32(newBytesAcked) / c.wnd)
 	if c.dwnd < 0 {
 		c.dwnd = 0
 	}
@@ -138,9 +146,9 @@ func (c *Compound) GotMeasurement(m ccpFlow.Measurement) {
 
 func (c *Compound) Drop(ev ccpFlow.DropEvent) {
 	//if float32(time.Since(c.lastDrop).Seconds()) <= c.baseRTT {
-    //    return
-    //}
-    //c.lastDrop = time.Now()
+	//    return
+	//}
+	//c.lastDrop = time.Now()
 
 	oldCwnd := c.wnd
 	switch ev {
