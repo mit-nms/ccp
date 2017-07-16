@@ -28,10 +28,11 @@ type Compound struct {
 	pktSize  uint32
 	initCwnd float32
 
-	wnd     float32
-	cwnd    float32
-	dwnd    float32
-	lastAck uint32
+	ssthresh float32
+	wnd      float32
+	cwnd     float32
+	dwnd     float32
+	lastAck  uint32
 
 	sockid     uint32
 	ipc        ipc.SendOnly
@@ -62,6 +63,7 @@ func (c *Compound) Create(
 	c.ipc = send
 	c.pktSize = pktsz
 	c.initCwnd = float32(pktsz * 10)
+	c.ssthresh = 0x7fffffff
 	c.wnd = float32(pktsz * startCwnd)
 	c.cwnd = float32(pktsz * startCwnd)
 	c.dwnd = 0
@@ -97,6 +99,14 @@ func (c *Compound) GotMeasurement(m ccpFlow.Measurement) {
 		newBytesAcked = uint64(math.MaxUint32) + uint64(m.Ack) - uint64(c.lastAck)
 	} else {
 		newBytesAcked = uint64(m.Ack) - uint64(c.lastAck)
+	}
+
+	if c.cwnd < c.ssthresh {
+		// increase cwnd by 1 per packet
+		c.cwnd += float32(newBytesAcked)
+	} else {
+		// increase cwnd by 1 / cwnd per packet
+		c.cwnd += float32(c.pktSize) * (float32(newBytesAcked) / c.cwnd)
 	}
 
 	RTT := float32(m.Rtt.Seconds())
@@ -154,6 +164,7 @@ func (c *Compound) Drop(ev ccpFlow.DropEvent) {
 	switch ev {
 	case ccpFlow.DupAck:
 		c.cwnd /= 2
+		c.ssthresh = c.cwnd
 		if c.cwnd < c.initCwnd {
 			c.cwnd = c.initCwnd
 		}
@@ -179,6 +190,7 @@ func (c *Compound) Drop(ev ccpFlow.DropEvent) {
 			c.diff_reno = -1
 		}
 	case ccpFlow.Timeout:
+		c.ssthresh = c.wnd / 2
 		c.wnd = c.initCwnd
 		c.cwnd = c.initCwnd
 		c.dwnd = 0

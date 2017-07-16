@@ -40,7 +40,7 @@ func (r *Reno) Create(
 	r.sockid = socketid
 	r.ipc = send
 	r.pktSize = pktsz
-	r.ssthresh = float32(pktsz * 1000)
+	r.ssthresh = 0x7fffffff
 	r.initCwnd = float32(pktsz * 10)
 	r.cwnd = float32(pktsz * startCwnd)
 	r.lastDrop = time.Now()
@@ -108,8 +108,8 @@ func (r *Reno) Drop(ev ccpFlow.DropEvent) {
 			r.cwnd = r.initCwnd
 		}
 	case ccpFlow.Timeout:
+		r.ssthresh = r.cwnd / 2
 		r.cwnd = r.initCwnd
-		r.ssthresh /= 2
 	default:
 		log.WithFields(log.Fields{
 			"event": ev,

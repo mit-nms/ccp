@@ -60,7 +60,7 @@ func (c *Cubic) Create(
 	//Pseudo code doesn't specify how to intialize these
 	c.initCwnd = float32(10)
 	c.cwnd = float32(startCwnd)
-	c.ssthresh = 1000
+	c.ssthresh = (0x7fffffff / float32(pktsz))
 	c.lastDrop = time.Now()
 	c.rtt = time.Duration(0)
 	//not sure about what this value should be
@@ -125,10 +125,11 @@ func (c *Cubic) GotMeasurement(m ccpFlow.Measurement) {
 	c.newPattern()
 
 	log.WithFields(log.Fields{
-		"gotAck":      m.Ack,
-		"currCwnd":    c.cwnd * float32(c.pktSize),
-		"currLastAck": c.lastAck,
-		"newlyAcked":  newBytesAcked,
+		"gotAck":            m.Ack,
+		"currCwnd":          c.cwnd,
+		"currLastAck":       c.lastAck,
+		"newlyAcked":        newBytesAcked,
+		"newlyAckedPackets": no_of_acks,
 	}).Info("[cubic] got ack")
 
 	c.lastAck = m.Ack
