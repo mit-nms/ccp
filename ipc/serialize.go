@@ -153,7 +153,7 @@ func (i *Ipc) demux(ch chan []byte) {
 			i.MeasureNotify <- MeasureMsg{
 				socketId: ipcm.socketId,
 				ackNo:    ipcm.u32s[0],
-				rtt:      time.Duration(ipcm.u32s[1]) * time.Nanosecond,
+				rtt:      time.Duration(ipcm.u32s[1]) * time.Microsecond,
 				rin:      ipcm.u64s[0],
 				rout:     ipcm.u64s[1],
 			}

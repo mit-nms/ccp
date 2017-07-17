@@ -16,7 +16,7 @@ type Reno struct {
 	pktSize  uint32
 	initCwnd float32
 
-	ssthresh float32
+	ssthresh uint32
 	cwnd     float32
 	lastAck  uint32
 	rtt      time.Duration
@@ -51,7 +51,21 @@ func (r *Reno) Create(
 		r.lastAck = startSeq - 1
 	}
 
-	r.newPattern()
+	pattern, err := pattern.
+		NewPattern().
+		Cwnd(uint32(r.cwnd)).
+		WaitRtts(0.1).
+		Report().
+		Compile()
+	if err != nil {
+		log.WithFields(log.Fields{
+			"err":  err,
+			"cwnd": r.cwnd,
+		}).Info("make cwnd msg failed")
+		return
+	}
+
+	r.sendPattern(pattern)
 }
 
 func (r *Reno) GotMeasurement(m ccpFlow.Measurement) {
@@ -69,65 +83,24 @@ func (r *Reno) GotMeasurement(m ccpFlow.Measurement) {
 		newBytesAcked = uint64(m.Ack) - uint64(r.lastAck)
 	}
 
-	if r.cwnd < r.ssthresh {
-		// increase cwnd by 1 per packet
-		r.cwnd += float32(newBytesAcked)
-	} else {
-		// increase cwnd by 1 / cwnd per packet
-		r.cwnd += float32(r.pktSize) * (float32(newBytesAcked) / r.cwnd)
-	}
+    acked := newBytesAcked
+
+	if uint32(r.cwnd) < r.ssthresh {
+		// increase cwnd by 1 per packet, until ssthresh
+        if uint64(r.cwnd) + newBytesAcked > uint64(r.ssthresh) {
+            newBytesAcked -= uint64(r.ssthresh - uint32(r.cwnd))
+            r.cwnd = float32(r.ssthresh)
+        } else {
+            r.cwnd += float32(newBytesAcked)
+            newBytesAcked = 0
+        }
+	} 
+
+    // increase cwnd by 1 / cwnd per packet
+    r.cwnd += float32(r.pktSize) * (float32(newBytesAcked) / r.cwnd)
 
 	// notify increased cwnd
-	r.newPattern()
-	r.rtt = m.Rtt
-
-	log.WithFields(log.Fields{
-		"gotAck":       m.Ack,
-		"currCwndPkts": r.cwnd / float32(r.pktSize),
-		"currLastAck":  r.lastAck,
-		"newlyAcked":   newBytesAcked,
-	}).Info("[reno] got ack")
-
-	r.lastAck = m.Ack
-	return
-}
-
-func (r *Reno) Drop(ev ccpFlow.DropEvent) {
-	if time.Since(r.lastDrop) <= r.rtt {
-		return
-	}
-
-	r.lastDrop = time.Now()
-
-	oldCwnd := r.cwnd
-	switch ev {
-	case ccpFlow.DupAck:
-		r.cwnd /= 2
-		r.ssthresh = r.cwnd
-		if r.cwnd < r.initCwnd {
-			r.cwnd = r.initCwnd
-		}
-	case ccpFlow.Timeout:
-		r.ssthresh = r.cwnd / 2
-		r.cwnd = r.initCwnd
-	default:
-		log.WithFields(log.Fields{
-			"event": ev,
-		}).Warn("[reno] unknown drop event type")
-		return
-	}
-
-	log.WithFields(log.Fields{
-		"oldCwnd":  oldCwnd,
-		"currCwnd": r.cwnd,
-		"event":    ev,
-	}).Info("[reno] drop")
-
-	r.newPattern()
-}
-
-func (r *Reno) newPattern() {
-	staticPattern, err := pattern.
+	pattern, err := pattern.
 		NewPattern().
 		Cwnd(uint32(r.cwnd)).
 		WaitRtts(0.5).
@@ -141,7 +114,78 @@ func (r *Reno) newPattern() {
 		return
 	}
 
-	err = r.ipc.SendPatternMsg(r.sockid, staticPattern)
+	r.sendPattern(pattern)
+
+	r.rtt = m.Rtt
+
+	log.WithFields(log.Fields{
+		"gotAck":       m.Ack,
+		"currCwndPkts": r.cwnd / float32(r.pktSize),
+		"currLastAck":  r.lastAck,
+		"newlyAcked":   acked,
+        "ssThresh":     r.ssthresh,
+	}).Info("[reno] got ack")
+
+	r.lastAck = m.Ack
+	return
+}
+
+func (r *Reno) Drop(ev ccpFlow.DropEvent) {
+	if time.Since(r.lastDrop) <= r.rtt {
+		return
+	}
+
+	log.WithFields(log.Fields{
+		"time since last drop": time.Since(r.lastDrop),
+		"rtt": r.rtt,
+	}).Info("[reno] got drop")
+
+	r.lastDrop = time.Now()
+
+	oldCwnd := r.cwnd
+	switch ev {
+	case ccpFlow.DupAck:
+		r.cwnd /= 2
+		r.ssthresh = uint32(r.cwnd)
+		if r.cwnd < r.initCwnd {
+			r.cwnd = r.initCwnd
+		}
+	case ccpFlow.Timeout:
+		r.ssthresh = uint32(r.cwnd / 2)
+		r.cwnd = r.initCwnd
+	default:
+		log.WithFields(log.Fields{
+			"event": ev,
+		}).Warn("[reno] unknown drop event type")
+		return
+	}
+
+	pattern, err := pattern.
+		NewPattern().
+		Cwnd(uint32(r.cwnd)).
+		WaitRtts(0.1).
+		Report().
+		Compile()
+	if err != nil {
+		log.WithFields(log.Fields{
+			"err":  err,
+			"cwnd": r.cwnd,
+		}).Info("make cwnd msg failed")
+		return
+	}
+
+	r.sendPattern(pattern)
+
+	log.WithFields(log.Fields{
+		"oldCwndPkts":  oldCwnd / float32(r.pktSize),
+		"currCwndPkts": r.cwnd / float32(r.pktSize),
+		"event":        ev,
+        "ssThresh":     r.ssthresh,
+	}).Info("[reno] drop")
+}
+
+func (r *Reno) sendPattern(pattern *pattern.Pattern) {
+	err := r.ipc.SendPatternMsg(r.sockid, pattern)
 	if err != nil {
 		log.WithFields(log.Fields{"cwnd": r.cwnd, "name": r.sockid}).Warn(err)
 	}

@@ -87,7 +87,7 @@ func (m *MeasureMsg) Serialize() ([]byte, error) {
 	return msgWriter(ipcMsg{
 		typ:      MEASURE,
 		socketId: m.socketId,
-		u32s:     []uint32{m.ackNo, uint32(m.rtt.Nanoseconds())},
+		u32s:     []uint32{m.ackNo, uint32(m.rtt.Nanoseconds() / 1000)}, // microseconds
 		u64s:     []uint64{m.rin, m.rout},
 	})
 }

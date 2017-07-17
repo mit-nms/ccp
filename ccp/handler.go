@@ -31,7 +31,7 @@ func handleMeasure(ack ipc.MeasureMsg) {
 		"rtt":    ack.Rtt(),
 		"rin":    ack.Rin(),
 		"rout":   ack.Rout(),
-	}).Info("handleMeasure")
+	}).Debug("handleMeasure")
 
 	if flow, ok := flows[ack.SocketId()]; !ok {
 		log.WithFields(log.Fields{"flowid": ack.SocketId()}).Warn("Unknown flow")
@@ -50,7 +50,7 @@ func handleDrop(dr ipc.DropMsg) {
 	log.WithFields(log.Fields{
 		"flowid":  dr.SocketId,
 		"drEvent": dr.Event,
-	}).Info("handleDrop")
+	}).Debug("handleDrop")
 
 	if flow, ok := flows[dr.SocketId()]; !ok {
 		log.WithFields(log.Fields{"flowid": dr.SocketId()}).Warn("Unknown flow")
