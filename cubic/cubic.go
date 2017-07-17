@@ -57,13 +57,14 @@ func (c *Cubic) Create(
 	c.pktSize = pktsz
 	c.lastAck = 0
 	c.ipc = send
-	//Pseudo code doesn't specify how to intialize these
+	// Pseudo code doesn't specify how to intialize these
+    c.lastAck = startSeq
 	c.initCwnd = float32(10)
 	c.cwnd = float32(startCwnd)
 	c.ssthresh = (0x7fffffff / float32(pktsz))
 	c.lastDrop = time.Now()
 	c.rtt = time.Duration(0)
-	//not sure about what this value should be
+	// not sure about what this value should be
 	c.cwnd_cnt = 0
 
 	c.tcp_friendliness = true
@@ -72,7 +73,21 @@ func (c *Cubic) Create(
 	c.C = 0.4
 	c.cubic_reset()
 
-	c.newPattern()
+	pattern, err := pattern.
+		NewPattern().
+		Cwnd(uint32(c.cwnd * float32(c.pktSize))).
+		WaitRtts(0.1).
+		Report().
+		Compile()
+	if err != nil {
+		log.WithFields(log.Fields{
+			"err":  err,
+			"cwndPkts": c.cwnd,
+		}).Info("make cwnd msg failed")
+		return
+	}
+
+    c.sendPattern(pattern)
 }
 
 func (c *Cubic) cubic_reset() {
@@ -86,50 +101,71 @@ func (c *Cubic) cubic_reset() {
 }
 
 func (c *Cubic) GotMeasurement(m ccpFlow.Measurement) {
-	// reordering of messsages
-	// if within 10 packets, assume no integer overflow
+    // Ignore out of order netlink messages
+    // Happens sometimes when the reporting interval is small
+	// If within 10 packets, assume no integer overflow
 	if m.Ack < c.lastAck && m.Ack > c.lastAck-c.pktSize*10 {
 		return
 	}
 
-	// handle integer overflow / sequence wraparound
+	// Handle integer overflow / sequence wraparound
 	var newBytesAcked uint64
 	if m.Ack < c.lastAck {
 		newBytesAcked = uint64(math.MaxUint32) + uint64(m.Ack) - uint64(c.lastAck)
 	} else {
 		newBytesAcked = uint64(m.Ack) - uint64(c.lastAck)
 	}
-
-	c.rtt = m.Rtt
+	
+    c.rtt = m.Rtt
 	RTT := float32(c.rtt.Seconds())
-	no_of_acks := uint32(float32(newBytesAcked) / float32(c.pktSize))
-	for i := uint32(0); i < no_of_acks; i++ {
+	no_of_acks := float32(newBytesAcked) / float32(c.pktSize)
+
+    if c.cwnd <= c.ssthresh {
+        if c.cwnd + no_of_acks < c.ssthresh {
+            c.cwnd += no_of_acks
+            no_of_acks = 0
+        } else {
+            no_of_acks -= (c.ssthresh - c.cwnd)
+            c.cwnd = c.ssthresh
+        }
+    }
+
+	for i := uint32(0); i < uint32(no_of_acks); i++ {
 		if c.dMin <= 0 || RTT < c.dMin {
 			c.dMin = RTT
 		}
 
-		if c.cwnd <= c.ssthresh {
-			c.cwnd = c.cwnd + 1
-		} else {
-			c.cubic_update()
-			if c.cwnd_cnt > c.cnt {
-				c.cwnd = c.cwnd + 1
-				c.cwnd_cnt = 0
-			} else {
-				c.cwnd_cnt = c.cwnd_cnt + 1
-			}
-		}
+        c.cubic_update()
+        if c.cwnd_cnt > c.cnt {
+            c.cwnd = c.cwnd + 1
+            c.cwnd_cnt = 0
+        } else {
+            c.cwnd_cnt = c.cwnd_cnt + 1
+        }
 	}
 
 	// notify increased cwnd
-	c.newPattern()
+	pattern, err := pattern.
+		NewPattern().
+		Cwnd(uint32(c.cwnd * float32(c.pktSize))).
+		WaitRtts(0.5).
+		Report().
+		Compile()
+	if err != nil {
+		log.WithFields(log.Fields{
+			"err":  err,
+			"cwndPkts": c.cwnd,
+		}).Info("make cwnd msg failed")
+		return
+	}
+
+    c.sendPattern(pattern)
 
 	log.WithFields(log.Fields{
 		"gotAck":            m.Ack,
-		"currCwnd":          c.cwnd,
 		"currLastAck":       c.lastAck,
-		"newlyAcked":        newBytesAcked,
-		"newlyAckedPackets": no_of_acks,
+		"newlyAckedPackets": float32(newBytesAcked) / float32(c.pktSize),
+		"currCwndPkts":      c.cwnd,
 	}).Info("[cubic] got ack")
 
 	c.lastAck = m.Ack
@@ -137,11 +173,11 @@ func (c *Cubic) GotMeasurement(m ccpFlow.Measurement) {
 }
 
 func (c *Cubic) Drop(ev ccpFlow.DropEvent) {
-	//if time.Since(c.lastDrop) <= c.rtt {
-	//    return
-	//}
+	if time.Since(c.lastDrop) <= c.rtt {
+	    return
+	}
 
-	//c.lastDrop = time.Now()
+	c.lastDrop = time.Now()
 
 	switch ev {
 	case ccpFlow.DupAck:
@@ -155,6 +191,7 @@ func (c *Cubic) Drop(ev ccpFlow.DropEvent) {
 		c.cwnd = c.cwnd * (1 - c.BETA)
 		c.ssthresh = c.cwnd
 	case ccpFlow.Timeout:
+		c.ssthresh = c.cwnd / 2
 		c.cwnd = c.initCwnd
 		c.cubic_reset()
 	default:
@@ -164,12 +201,25 @@ func (c *Cubic) Drop(ev ccpFlow.DropEvent) {
 		return
 	}
 
-	log.WithFields(log.Fields{
-		"currCwnd": c.cwnd * float32(c.pktSize),
-		"event":    ev,
-	}).Info("[cubic] drop")
+	pattern, err := pattern.
+		NewPattern().
+		Cwnd(uint32(c.cwnd * float32(c.pktSize))).
+		WaitRtts(0.1).
+		Report().
+		Compile()
+	if err != nil {
+		log.WithFields(log.Fields{
+			"err":  err,
+			"cwndPkts": c.cwnd,
+		}).Info("make cwnd msg failed")
+		return
+	}
 
-	c.newPattern()
+    c.sendPattern(pattern)
+	log.WithFields(log.Fields{
+		"currCwndPkts": c.cwnd,
+		"event":        ev,
+	}).Info("[cubic] drop")
 }
 
 func (c *Cubic) cubic_update() {
@@ -212,25 +262,11 @@ func (c *Cubic) cubic_tcp_friendliness() {
 	}
 }
 
-func (c *Cubic) newPattern() {
-	staticPattern, err := pattern.
-		NewPattern().
-		Cwnd(uint32(c.cwnd * float32(c.pktSize))).
-		WaitRtts(0.5).
-		Report().
-		Compile()
+func (c *Cubic) sendPattern(pattern *pattern.Pattern) {
+    err := c.ipc.SendPatternMsg(c.sockid, pattern)
 	if err != nil {
 		log.WithFields(log.Fields{
-			"err":  err,
-			"cwnd": c.cwnd * float32(c.pktSize),
-		}).Info("make cwnd msg failed")
-		return
-	}
-
-	err = c.ipc.SendPatternMsg(c.sockid, staticPattern)
-	if err != nil {
-		log.WithFields(log.Fields{
-			"cwnd": c.cwnd * float32(c.pktSize),
+			"cwndPkts": c.cwnd,
 			"name": c.sockid,
 		}).Warn(err)
 	}

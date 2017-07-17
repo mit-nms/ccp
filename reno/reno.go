@@ -69,13 +69,14 @@ func (r *Reno) Create(
 }
 
 func (r *Reno) GotMeasurement(m ccpFlow.Measurement) {
-	// reordering of messsages
-	// if within 10 packets, assume no integer overflow
+    // Ignore out of order netlink messages
+    // Happens sometimes when the reporting interval is small
+	// If within 10 packets, assume no integer overflow
 	if m.Ack < r.lastAck && m.Ack > r.lastAck-r.pktSize*10 {
 		return
 	}
 
-	// handle integer overflow / sequence wraparound
+	// Handle integer overflow / sequence wraparound
 	var newBytesAcked uint64
 	if m.Ack < r.lastAck {
 		newBytesAcked = uint64(math.MaxUint32) + uint64(m.Ack) - uint64(r.lastAck)
