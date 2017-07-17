@@ -9,6 +9,7 @@ PACKAGES = ./ccpFlow \
 		   ./vegas \
 		   ./cubic \
 		   ./compound \
+		   ./bbr \
 		   ./nl_userapp \
 		   ./ccp
 
