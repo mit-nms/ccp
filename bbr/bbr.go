@@ -13,7 +13,7 @@ import (
 
 // implement ccpFlow.Flow interface
 type BBR struct {
-	pktSize  uint32
+	pktSize uint32
 
 	lastAck    uint32
 	rtt        time.Duration
@@ -40,7 +40,7 @@ func (b *BBR) Create(
 	b.sockid = socketid
 	b.ipc = send
 	b.pktSize = pktsz
-	b.rcv_rate = float32(b.pktSize*100)
+	b.rcv_rate = float32(b.pktSize * 100)
 	b.lastDrop = time.Now()
 	b.lastUpdate = time.Now()
 	b.rtt = time.Since(b.lastDrop)
@@ -49,14 +49,14 @@ func (b *BBR) Create(
 	} else {
 		b.lastAck = startSeq - 1
 	}
-	b.wait_time = 160*time.Millisecond
+	b.wait_time = 160 * time.Millisecond
 	b.sendPattern(0.95*b.rcv_rate, b.wait_time/8)
 
 }
 
 func (b *BBR) GotMeasurement(m ccpFlow.Measurement) {
-    // Ignore out of order netlink messages
-    // Happens sometimes when the reporting interval is small
+	// Ignore out of order netlink messages
+	// Happens sometimes when the reporting interval is small
 	// If within 10 packets, assume no integer overflow
 	if m.Ack < b.lastAck && m.Ack > b.lastAck-b.pktSize*10 {
 		return
@@ -74,21 +74,24 @@ func (b *BBR) GotMeasurement(m ccpFlow.Measurement) {
 		newBytesAcked = uint64(m.Ack) - uint64(b.lastAck)
 	}
 
-    acked := newBytesAcked
+	acked := newBytesAcked
 
-    if time.Since(b.lastUpdate) >= b.wait_time {
+	if time.Since(b.lastUpdate) >= b.wait_time {
+		b.wait_time = m.Rtt
 		b.sendPattern(0.95*b.rcv_rate, b.wait_time/8)
-		b.lastUpdate=time.Now()
+		b.lastUpdate = time.Now()
+
+		log.WithFields(log.Fields{
+			"gotAck":          m.Ack,
+			"currRate (Mbps)": b.rcv_rate / 125000,
+			"currLastAck":     b.lastAck,
+			"newlyAcked":      acked,
+			"rin (Mbps)":      m.Rin / 125000,
+			"rout (Mbps)":     m.Rout / 125000,
+		}).Info("[bbr] got ack")
 	}
 
 	b.rtt = m.Rtt
-
-	log.WithFields(log.Fields{
-		"gotAck":       m.Ack,
-		"currRate":     b.rcv_rate,
-		"currLastAck":  b.lastAck,
-		"newlyAcked":   acked,
-	}).Info("[bbr] got ack")
 
 	b.lastAck = m.Ack
 	return
@@ -99,7 +102,7 @@ func (b *BBR) Drop(ev ccpFlow.DropEvent) {
 		return
 	}
 
-	oldRate := b.rcv_rate
+	//oldRate := b.rcv_rate
 	log.WithFields(log.Fields{
 		"time since last drop": time.Since(b.lastDrop),
 		"rtt": b.rtt,
@@ -107,54 +110,53 @@ func (b *BBR) Drop(ev ccpFlow.DropEvent) {
 
 	b.lastDrop = time.Now()
 
-	switch ev {
-	case ccpFlow.DupAck:
-		b.rcv_rate /=2
-	case ccpFlow.Timeout:
-		b.rcv_rate = float32(b.pktSize * 100)
-	default:
-		log.WithFields(log.Fields{
-			"event": ev,
-		}).Warn("[bbr] unknown drop event type")
-		return
-	}
+	//switch ev {
+	//case ccpFlow.DupAck:
+	//	b.rcv_rate /=2
+	//case ccpFlow.Timeout:
+	//	b.rcv_rate = float32(b.pktSize * 100)
+	//default:
+	//	log.WithFields(log.Fields{
+	//		"event": ev,
+	//	}).Warn("[bbr] unknown drop event type")
+	//	return
+	//}
 
-	b.lastUpdate = time.Now()
-	b.wait_time = 160*time.Millisecond
-	b.sendPattern(0.95*b.rcv_rate, b.wait_time/8)
-	
-	log.WithFields(log.Fields{
-		"oldRate": oldRate,
-		"newRate": b.rcv_rate,
-		"event":   ev,
-	}).Info("[bbr] drop")
+	//b.lastUpdate = time.Now()
+	//b.wait_time = 160*time.Millisecond
+	//b.sendPattern(0.95*b.rcv_rate, b.wait_time/8)
+	//
+	//log.WithFields(log.Fields{
+	//	"oldRate": oldRate,
+	//	"newRate": b.rcv_rate,
+	//	"event":   ev,
+	//}).Info("[bbr] drop")
 }
 
 func (b *BBR) sendPattern(rcv_rate float32, wait_time time.Duration) {
-		pattern, err := pattern.
+	pattern, err := pattern.
 		NewPattern().
-		Rate(1.25*rcv_rate).
-		Wait(wait_time).
+		Rate(1.25 * rcv_rate).
+		Wait(wait_time / 2).
 		Report().
-		Rate(0.75*rcv_rate).
-		Wait(wait_time).
+		Wait(wait_time / 2).
 		Report().
-		Rate(rcv_rate).
-		Wait(wait_time).
+		Rate(0.75 * rcv_rate).
+		Wait(wait_time / 2).
 		Report().
-		Rate(rcv_rate).
-		Wait(wait_time).
+		Wait(wait_time / 2).
 		Report().
 		Rate(rcv_rate).
 		Wait(wait_time).
 		Report().
-		Rate(rcv_rate).
 		Wait(wait_time).
 		Report().
-		Rate(rcv_rate).
 		Wait(wait_time).
 		Report().
-		Rate(rcv_rate).
+		Wait(wait_time).
+		Report().
+		Wait(wait_time).
+		Report().
 		Wait(wait_time).
 		Report().
 		Compile()

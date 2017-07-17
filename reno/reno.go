@@ -16,11 +16,12 @@ type Reno struct {
 	pktSize  uint32
 	initCwnd float32
 
-	ssthresh uint32
-	cwnd     float32
-	lastAck  uint32
-	rtt      time.Duration
-	lastDrop time.Time
+	ssthresh  uint32
+	cwndClamp float32
+	cwnd      float32
+	lastAck   uint32
+	rtt       time.Duration
+	lastDrop  time.Time
 
 	sockid uint32
 	ipc    ipc.SendOnly
@@ -41,6 +42,7 @@ func (r *Reno) Create(
 	r.ipc = send
 	r.pktSize = pktsz
 	r.ssthresh = 0x7fffffff
+	r.cwndClamp = 2e5 * float32(pktsz)
 	r.initCwnd = float32(pktsz * 10)
 	r.cwnd = float32(pktsz * startCwnd)
 	r.lastDrop = time.Now()
@@ -69,8 +71,8 @@ func (r *Reno) Create(
 }
 
 func (r *Reno) GotMeasurement(m ccpFlow.Measurement) {
-    // Ignore out of order netlink messages
-    // Happens sometimes when the reporting interval is small
+	// Ignore out of order netlink messages
+	// Happens sometimes when the reporting interval is small
 	// If within 10 packets, assume no integer overflow
 	if m.Ack < r.lastAck && m.Ack > r.lastAck-r.pktSize*10 {
 		return
@@ -84,21 +86,25 @@ func (r *Reno) GotMeasurement(m ccpFlow.Measurement) {
 		newBytesAcked = uint64(m.Ack) - uint64(r.lastAck)
 	}
 
-    acked := newBytesAcked
+	acked := newBytesAcked
 
 	if uint32(r.cwnd) < r.ssthresh {
 		// increase cwnd by 1 per packet, until ssthresh
-        if uint64(r.cwnd) + newBytesAcked > uint64(r.ssthresh) {
-            newBytesAcked -= uint64(r.ssthresh - uint32(r.cwnd))
-            r.cwnd = float32(r.ssthresh)
-        } else {
-            r.cwnd += float32(newBytesAcked)
-            newBytesAcked = 0
-        }
-	} 
+		if uint64(r.cwnd)+newBytesAcked > uint64(r.ssthresh) {
+			newBytesAcked -= uint64(r.ssthresh - uint32(r.cwnd))
+			r.cwnd = float32(r.ssthresh)
+		} else {
+			r.cwnd += float32(newBytesAcked)
+			newBytesAcked = 0
+		}
+	}
 
-    // increase cwnd by 1 / cwnd per packet
-    r.cwnd += float32(r.pktSize) * (float32(newBytesAcked) / r.cwnd)
+	// increase cwnd by 1 / cwnd per packet
+	r.cwnd += float32(r.pktSize) * (float32(newBytesAcked) / r.cwnd)
+
+	if r.cwnd > r.cwndClamp {
+		r.cwnd = r.cwndClamp
+	}
 
 	// notify increased cwnd
 	pattern, err := pattern.
@@ -124,7 +130,7 @@ func (r *Reno) GotMeasurement(m ccpFlow.Measurement) {
 		"currCwndPkts": r.cwnd / float32(r.pktSize),
 		"currLastAck":  r.lastAck,
 		"newlyAcked":   acked,
-        "ssThresh":     r.ssthresh,
+		"ssThresh":     r.ssthresh,
 	}).Info("[reno] got ack")
 
 	r.lastAck = m.Ack
@@ -181,7 +187,7 @@ func (r *Reno) Drop(ev ccpFlow.DropEvent) {
 		"oldCwndPkts":  oldCwnd / float32(r.pktSize),
 		"currCwndPkts": r.cwnd / float32(r.pktSize),
 		"event":        ev,
-        "ssThresh":     r.ssthresh,
+		"ssThresh":     r.ssthresh,
 	}).Info("[reno] drop")
 }
 

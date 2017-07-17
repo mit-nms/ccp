@@ -237,7 +237,7 @@ func serializePatternEvent(ev flowPattern.PatternEvent) (buf []byte, err error) 
 	var value uint32
 	switch ev.Type {
 	case flowPattern.SETRATEABS:
-		value = uint32(ev.Rate * 100)
+		value = uint32(ev.Rate)
 
 	case flowPattern.SETCWNDABS:
 		value = ev.Cwnd
