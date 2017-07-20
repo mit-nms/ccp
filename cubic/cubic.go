@@ -16,9 +16,9 @@ import (
 // implement ccpFlow.Flow interface
 type Cubic struct {
 	pktSize  uint32
-	initCwnd float32
+	initCwnd float64
 
-	cwnd     float32
+	cwnd     float64
 	lastAck  uint32
 	lastDrop time.Time
 	rtt      time.Duration
@@ -26,20 +26,20 @@ type Cubic struct {
 	ipc      ipc.SendOnly
 
 	//state for cubic
-	ssthresh         float32
-	cwnd_cnt         float32
+	ssthresh         float64
+	cwnd_cnt         float64
 	tcp_friendliness bool
-	BETA             float32
+	BETA             float64
 	fast_convergence bool
-	C                float32
-	Wlast_max        float32
-	epoch_start      float32
-	origin_point     float32
-	dMin             float32
-	Wtcp             float32
-	K                float32
-	ack_cnt          float32
-	cnt              float32
+	C                float64
+	Wlast_max        float64
+	epoch_start      float64
+	origin_point     float64
+	dMin             float64
+	Wtcp             float64
+	K                float64
+	ack_cnt          float64
+	cnt              float64
 }
 
 func (c *Cubic) Name() string {
@@ -58,10 +58,10 @@ func (c *Cubic) Create(
 	c.lastAck = 0
 	c.ipc = send
 	// Pseudo code doesn't specify how to intialize these
-    c.lastAck = startSeq
-	c.initCwnd = float32(10)
-	c.cwnd = float32(startCwnd)
-	c.ssthresh = (0x7fffffff / float32(pktsz))
+	c.lastAck = startSeq
+	c.initCwnd = float64(10)
+	c.cwnd = float64(startCwnd)
+	c.ssthresh = (0x7fffffff / float64(pktsz))
 	c.lastDrop = time.Now()
 	c.rtt = time.Duration(0)
 	// not sure about what this value should be
@@ -75,19 +75,19 @@ func (c *Cubic) Create(
 
 	pattern, err := pattern.
 		NewPattern().
-		Cwnd(uint32(c.cwnd * float32(c.pktSize))).
+		Cwnd(uint32(c.cwnd * float64(c.pktSize))).
 		WaitRtts(0.1).
 		Report().
 		Compile()
 	if err != nil {
 		log.WithFields(log.Fields{
-			"err":  err,
+			"err":      err,
 			"cwndPkts": c.cwnd,
 		}).Info("make cwnd msg failed")
 		return
 	}
 
-    c.sendPattern(pattern)
+	c.sendPattern(pattern)
 }
 
 func (c *Cubic) cubic_reset() {
@@ -101,8 +101,8 @@ func (c *Cubic) cubic_reset() {
 }
 
 func (c *Cubic) GotMeasurement(m ccpFlow.Measurement) {
-    // Ignore out of order netlink messages
-    // Happens sometimes when the reporting interval is small
+	// Ignore out of order netlink messages
+	// Happens sometimes when the reporting interval is small
 	// If within 10 packets, assume no integer overflow
 	if m.Ack < c.lastAck && m.Ack > c.lastAck-c.pktSize*10 {
 		return
@@ -115,56 +115,56 @@ func (c *Cubic) GotMeasurement(m ccpFlow.Measurement) {
 	} else {
 		newBytesAcked = uint64(m.Ack) - uint64(c.lastAck)
 	}
-	
-    c.rtt = m.Rtt
-	RTT := float32(c.rtt.Seconds())
-	no_of_acks := float32(newBytesAcked) / float32(c.pktSize)
 
-    if c.cwnd <= c.ssthresh {
-        if c.cwnd + no_of_acks < c.ssthresh {
-            c.cwnd += no_of_acks
-            no_of_acks = 0
-        } else {
-            no_of_acks -= (c.ssthresh - c.cwnd)
-            c.cwnd = c.ssthresh
-        }
-    }
+	c.rtt = m.Rtt
+	RTT := float64(c.rtt.Seconds())
+	no_of_acks := float64(newBytesAcked) / float64(c.pktSize)
+
+	if c.cwnd <= c.ssthresh {
+		if c.cwnd+no_of_acks < c.ssthresh {
+			c.cwnd += no_of_acks
+			no_of_acks = 0
+		} else {
+			no_of_acks -= (c.ssthresh - c.cwnd)
+			c.cwnd = c.ssthresh
+		}
+	}
 
 	for i := uint32(0); i < uint32(no_of_acks); i++ {
 		if c.dMin <= 0 || RTT < c.dMin {
 			c.dMin = RTT
 		}
 
-        c.cubic_update()
-        if c.cwnd_cnt > c.cnt {
-            c.cwnd = c.cwnd + 1
-            c.cwnd_cnt = 0
-        } else {
-            c.cwnd_cnt = c.cwnd_cnt + 1
-        }
+		c.cubic_update()
+		if c.cwnd_cnt > c.cnt {
+			c.cwnd = c.cwnd + 1
+			c.cwnd_cnt = 0
+		} else {
+			c.cwnd_cnt = c.cwnd_cnt + 1
+		}
 	}
 
 	// notify increased cwnd
 	pattern, err := pattern.
 		NewPattern().
-		Cwnd(uint32(c.cwnd * float32(c.pktSize))).
+		Cwnd(uint32(c.cwnd * float64(c.pktSize))).
 		WaitRtts(0.5).
 		Report().
 		Compile()
 	if err != nil {
 		log.WithFields(log.Fields{
-			"err":  err,
+			"err":      err,
 			"cwndPkts": c.cwnd,
 		}).Info("make cwnd msg failed")
 		return
 	}
 
-    c.sendPattern(pattern)
+	c.sendPattern(pattern)
 
 	log.WithFields(log.Fields{
 		"gotAck":            m.Ack,
 		"currLastAck":       c.lastAck,
-		"newlyAckedPackets": float32(newBytesAcked) / float32(c.pktSize),
+		"newlyAckedPackets": float64(newBytesAcked) / float64(c.pktSize),
 		"currCwndPkts":      c.cwnd,
 	}).Info("[cubic] got ack")
 
@@ -174,7 +174,7 @@ func (c *Cubic) GotMeasurement(m ccpFlow.Measurement) {
 
 func (c *Cubic) Drop(ev ccpFlow.DropEvent) {
 	if time.Since(c.lastDrop) <= c.rtt {
-	    return
+		return
 	}
 
 	c.lastDrop = time.Now()
@@ -203,19 +203,19 @@ func (c *Cubic) Drop(ev ccpFlow.DropEvent) {
 
 	pattern, err := pattern.
 		NewPattern().
-		Cwnd(uint32(c.cwnd * float32(c.pktSize))).
+		Cwnd(uint32(c.cwnd * float64(c.pktSize))).
 		WaitRtts(0.1).
 		Report().
 		Compile()
 	if err != nil {
 		log.WithFields(log.Fields{
-			"err":  err,
+			"err":      err,
 			"cwndPkts": c.cwnd,
 		}).Info("make cwnd msg failed")
 		return
 	}
 
-    c.sendPattern(pattern)
+	c.sendPattern(pattern)
 	log.WithFields(log.Fields{
 		"currCwndPkts": c.cwnd,
 		"event":        ev,
@@ -225,9 +225,9 @@ func (c *Cubic) Drop(ev ccpFlow.DropEvent) {
 func (c *Cubic) cubic_update() {
 	c.ack_cnt = c.ack_cnt + 1
 	if c.epoch_start <= 0 {
-		c.epoch_start = float32(time.Now().UnixNano() / 1e9)
+		c.epoch_start = float64(time.Now().UnixNano() / 1e9)
 		if c.cwnd < c.Wlast_max {
-			c.K = float32(math.Pow(float64((c.Wlast_max-c.cwnd)/c.C), 1.0/3.0))
+			c.K = math.Pow(math.Max(0.0, ((c.Wlast_max-c.cwnd)/c.C)), 1.0/3.0)
 			c.origin_point = c.Wlast_max
 		} else {
 			c.K = 0
@@ -238,7 +238,7 @@ func (c *Cubic) cubic_update() {
 		c.Wtcp = c.cwnd
 	}
 
-	t := float32(time.Now().UnixNano()/1e9) + c.dMin - c.epoch_start
+	t := float64(time.Now().UnixNano()/1e9) + c.dMin - c.epoch_start
 	target := c.origin_point + c.C*((t-c.K)*(t-c.K)*(t-c.K))
 	if target > c.cwnd {
 		c.cnt = c.cwnd / (target - c.cwnd)
@@ -263,11 +263,11 @@ func (c *Cubic) cubic_tcp_friendliness() {
 }
 
 func (c *Cubic) sendPattern(pattern *pattern.Pattern) {
-    err := c.ipc.SendPatternMsg(c.sockid, pattern)
+	err := c.ipc.SendPatternMsg(c.sockid, pattern)
 	if err != nil {
 		log.WithFields(log.Fields{
 			"cwndPkts": c.cwnd,
-			"name": c.sockid,
+			"name":     c.sockid,
 		}).Warn(err)
 	}
 }
