@@ -75,6 +75,7 @@ func (b *BBR) GotMeasurement(m ccpFlow.Measurement) {
 	}
 
 	acked := newBytesAcked
+	b.rtt = m.Rtt
 
 	if time.Since(b.lastUpdate) >= b.wait_time {
 		b.wait_time = m.Rtt
@@ -88,10 +89,9 @@ func (b *BBR) GotMeasurement(m ccpFlow.Measurement) {
 			"newlyAcked":      acked,
 			"rin (Mbps)":      m.Rin / 125000,
 			"rout (Mbps)":     m.Rout / 125000,
+			"rtt-ns":          m.Rtt.Nanoseconds(),
 		}).Info("[bbr] got ack")
 	}
-
-	b.rtt = m.Rtt
 
 	b.lastAck = m.Ack
 	return

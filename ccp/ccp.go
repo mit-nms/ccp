@@ -2,7 +2,7 @@ package main
 
 import (
 	"flag"
-    //"time"
+	"time"
 
 	"ccp/bbr"
 	"ccp/ccpFlow"
@@ -24,9 +24,9 @@ var dp ipc.Datapath
 
 func init() {
 	log.SetLevel(log.InfoLevel)
-    //log.SetFormatter(&log.JSONFormatter{
-    //    TimestampFormat: time.RFC3339Nano,
-    //})
+	log.SetFormatter(&log.JSONFormatter{
+		TimestampFormat: time.RFC3339Nano,
+	})
 	flows = make(map[uint32]ccpFlow.Flow)
 	bbr.Init()
 	compound.Init()

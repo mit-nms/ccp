@@ -163,6 +163,7 @@ func (c *Cubic) GotMeasurement(m ccpFlow.Measurement) {
 
 	log.WithFields(log.Fields{
 		"gotAck":            m.Ack,
+		"rtt-ns":            c.rtt.Nanoseconds(),
 		"currLastAck":       c.lastAck,
 		"newlyAckedPackets": float64(newBytesAcked) / float64(c.pktSize),
 		"currCwndPkts":      c.cwnd,

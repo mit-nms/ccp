@@ -131,6 +131,7 @@ func (r *Reno) GotMeasurement(m ccpFlow.Measurement) {
 		"currLastAck":  r.lastAck,
 		"newlyAcked":   acked,
 		"ssThresh":     r.ssthresh,
+		"rtt-ns":       r.rtt.Nanoseconds(),
 	}).Info("[reno] got ack")
 
 	r.lastAck = m.Ack
