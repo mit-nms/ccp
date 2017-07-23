@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"ccp/bbr"
-	"ccp/ccpFlow"
 	"ccp/compound"
 	"ccp/cubic"
 	"ccp/ipc"
@@ -15,25 +14,19 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-var datapath = flag.String("datapath", "udp", "which IPC backend to use (udp|kernel)")
-var overrideAlg = flag.String("congAlg", "nil", "override the datapath's requested congestion control algorithm for all flows (cubic|reno|vegas|nil)")
-var initCwnd = flag.Uint("initCwnd", 10, "override the default starting congestion window")
-
-var flows map[uint32]ccpFlow.Flow
-var dp ipc.Datapath
-
 func init() {
 	log.SetLevel(log.InfoLevel)
 	log.SetFormatter(&log.JSONFormatter{
 		TimestampFormat: time.RFC3339Nano,
 	})
-	flows = make(map[uint32]ccpFlow.Flow)
-	bbr.Init()
-	compound.Init()
-	cubic.Init()
-	vegas.Init()
-	reno.Init()
 }
+
+var datapath = flag.String("datapath", "udp", "which IPC backend to use (udp|kernel)")
+var overrideAlg = flag.String("congAlg", "nil", "override the datapath's requested congestion control algorithm for all flows (cubic|reno|vegas|nil)")
+var initCwnd = flag.Uint("initCwnd", 10, "override the default starting congestion window")
+
+var flows map[uint32]flowHandler
+var dp ipc.Datapath
 
 func main() {
 	flag.Parse()
@@ -43,6 +36,13 @@ func main() {
 		"overrideAlg": *overrideAlg,
 		"startCwnd":   *initCwnd,
 	}).Info("parsed flags")
+
+	flows = make(map[uint32]flowHandler)
+	bbr.Init()
+	compound.Init()
+	cubic.Init()
+	vegas.Init()
+	reno.Init()
 
 	switch *datapath {
 	case "udp":
@@ -80,5 +80,5 @@ func main() {
 		return
 	}
 
-	handleMsgs(ackCh, createCh, dropCh)
+	handleMsgs(createCh, ackCh, dropCh)
 }
