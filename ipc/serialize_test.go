@@ -12,12 +12,14 @@ import (
 
 // dummy backend
 type MockBackend struct {
-	ch chan []byte
+	ch    chan []byte
+	doLog bool
 }
 
-func NewMockBackend() ipcbackend.Backend {
+func NewMockBackend(doLog bool) ipcbackend.Backend {
 	return &MockBackend{
-		ch: make(chan []byte),
+		ch:    make(chan []byte),
+		doLog: doLog,
 	}
 }
 
@@ -44,9 +46,11 @@ func (d *MockBackend) SendMsg(msg ipcbackend.Msg) error {
 		return err
 	}
 
-	log.WithFields(log.Fields{
-		"msg": s,
-	}).Info("sending message")
+	if d.doLog {
+		log.WithFields(log.Fields{
+			"msg": s,
+		}).Info("sending message")
+	}
 
 	go func() {
 		d.ch <- s
@@ -71,8 +75,8 @@ func (d *MockBackend) Close() error {
 	return nil
 }
 
-func testSetup() (i *Ipc, err error) {
-	back, err := NewMockBackend().SetupFinish()
+func testSetup(doLog bool) (i *Ipc, err error) {
+	back, err := NewMockBackend(doLog).SetupFinish()
 	if err != nil {
 		return
 	}
@@ -92,7 +96,7 @@ const testBigNum uint64 = 42
 const testString string = "forty-two"
 
 func TestEncodeMeasureMsg(t *testing.T) {
-	i, err := testSetup()
+	i, err := testSetup(true)
 	if err != nil {
 		t.Error(err)
 		return
@@ -134,7 +138,7 @@ func TestEncodeMeasureMsg(t *testing.T) {
 }
 
 func TestEncodeCreateMsg(t *testing.T) {
-	i, err := testSetup()
+	i, err := testSetup(true)
 	if err != nil {
 		t.Error(err)
 		return
@@ -177,7 +181,7 @@ func TestEncodeCreateMsg(t *testing.T) {
 }
 
 func TestEncodeDropMsg(t *testing.T) {
-	i, err := testSetup()
+	i, err := testSetup(true)
 	if err != nil {
 		t.Error(err)
 		return
@@ -207,7 +211,7 @@ func TestEncodeDropMsg(t *testing.T) {
 }
 
 func TestEncodePatternMsg(t *testing.T) {
-	i, err := testSetup()
+	i, err := testSetup(true)
 	if err != nil {
 		t.Error(err)
 		return
