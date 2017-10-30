@@ -89,6 +89,7 @@ func (v *Vegas) GotMeasurement(m ccpFlow.Measurement) {
 		"newlyAcked":  newBytesAcked,
 		"InQueue":     inQueue,
 		"baseRTT":     v.baseRTT,
+		"loss":        m.Loss,
 	}).Info("[vegas] got ack")
 
 	v.lastAck = m.Ack
