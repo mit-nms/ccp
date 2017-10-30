@@ -45,6 +45,7 @@ type MeasureMsg struct {
 	socketId uint32
 	ackNo    uint32
 	rtt      time.Duration
+	loss     uint32
 	rin      uint64
 	rout     uint64
 }
@@ -53,12 +54,14 @@ func (m *MeasureMsg) New(
 	sid uint32,
 	ack uint32,
 	t time.Duration,
+	loss uint32,
 	rin uint64,
 	rout uint64,
 ) {
 	m.socketId = sid
 	m.ackNo = ack
 	m.rtt = t
+	m.loss = loss
 	m.rin = rin
 	m.rout = rout
 }
@@ -75,6 +78,10 @@ func (m *MeasureMsg) Rtt() time.Duration {
 	return m.rtt
 }
 
+func (m *MeasureMsg) Loss() uint32 {
+	return m.loss
+}
+
 func (m *MeasureMsg) Rin() uint64 {
 	return m.rin
 }
@@ -87,7 +94,7 @@ func (m *MeasureMsg) Serialize() ([]byte, error) {
 	return msgWriter(ipcMsg{
 		typ:      MEASURE,
 		socketId: m.socketId,
-		u32s:     []uint32{m.ackNo, uint32(m.rtt.Nanoseconds() / 1000)}, // microseconds
+		u32s:     []uint32{m.ackNo, uint32(m.rtt.Nanoseconds() / 1000), m.loss}, // microseconds
 		u64s:     []uint64{m.rin, m.rout},
 	})
 }
@@ -166,6 +173,7 @@ func (i *Ipc) SendMeasureMsg(
 	socketId uint32,
 	ack uint32,
 	rtt time.Duration,
+	loss uint32,
 	rin uint64,
 	rout uint64,
 ) error {
@@ -173,6 +181,7 @@ func (i *Ipc) SendMeasureMsg(
 		socketId: socketId,
 		ackNo:    ack,
 		rtt:      rtt,
+		loss:     loss,
 		rin:      rin,
 		rout:     rout,
 	})

@@ -18,6 +18,7 @@ type Measurement struct {
 	Rtt  time.Duration
 	Rin  uint64
 	Rout uint64
+	Loss uint32
 }
 
 type Flow interface {

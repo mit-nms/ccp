@@ -77,8 +77,8 @@ func (sock *Sock) doNotify(measureMsg chan notifyAck) {
 			if notifAck.ack > totAck {
 				totAck = notifAck.ack
 			} else {
-                continue
-            }
+				continue
+			}
 
 			log.WithFields(log.Fields{
 				"name":  sock.name,
@@ -191,7 +191,7 @@ func writeMeasureMsg(
 	ack uint32,
 	rtt time.Duration,
 ) {
-	err := out.SendMeasureMsg(id, ack, rtt, 0, 0)
+	err := out.SendMeasureMsg(id, ack, rtt, 0, 0, 0)
 	if err != nil {
 		log.WithFields(log.Fields{"ack": ack, "name": name, "id": id, "where": "notify.writeMeasureMsg"}).Warn(err)
 		return

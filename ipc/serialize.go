@@ -100,7 +100,7 @@ func msgReader(buf []byte) (msg ipcMsg, err error) {
 		numU64 = 0
 		hasStr = true
 	case MEASURE:
-		numU32 = 2
+		numU32 = 3
 		numU64 = 2
 		hasStr = false
 	case PATTERN:
@@ -154,6 +154,7 @@ func (i *Ipc) demux(ch chan []byte) {
 				socketId: ipcm.socketId,
 				ackNo:    ipcm.u32s[0],
 				rtt:      time.Duration(ipcm.u32s[1]) * time.Microsecond,
+				loss:     ipcm.u32s[2],
 				rin:      ipcm.u64s[0],
 				rout:     ipcm.u64s[1],
 			}
@@ -191,10 +192,10 @@ func msgWriter(msg ipcMsg) ([]byte, error) {
 	case msg.typ == DROP && len(msg.u32s) == 0 && len(msg.u64s) == 0 && msg.str != "":
 		// + string
 		msg.len = uint8(6 + len(msg.str))
-	case msg.typ == MEASURE && len(msg.u32s) == 2 && len(msg.u64s) == 2 && msg.str == "":
-		// + 2 uint32, + 2 uint64, no string
-		// 6 + 8 + 16 = 30
-		msg.len = 30
+	case msg.typ == MEASURE && len(msg.u32s) == 3 && len(msg.u64s) == 2 && msg.str == "":
+		// + 3 uint32, + 2 uint64, no string
+		// 6 + 12 + 16 = 34
+		msg.len = 34
 	case msg.typ == PATTERN && len(msg.u32s) == 1 && len(msg.u64s) == 0 && msg.str != "":
 		// + 1 uint32, + string
 		msg.len = 10 + uint8(len(msg.str))

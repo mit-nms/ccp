@@ -25,6 +25,7 @@ func handleFlow(
 				"flowid": m.SocketId(),
 				"ackno":  m.AckNo(),
 				"rtt":    m.Rtt(),
+				"loss":   m.Loss(),
 				"rin":    m.Rin(),
 				"rout":   m.Rout(),
 			}).Debug("handleMeasure")
@@ -32,6 +33,7 @@ func handleFlow(
 			flow.GotMeasurement(ccpFlow.Measurement{
 				Ack:  m.AckNo(),
 				Rtt:  m.Rtt(),
+				Loss: m.Loss(),
 				Rin:  m.Rin(),
 				Rout: m.Rout(),
 			})

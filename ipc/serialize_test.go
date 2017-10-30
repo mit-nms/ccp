@@ -107,6 +107,7 @@ func TestEncodeMeasureMsg(t *testing.T) {
 		testNum,
 		testNum,
 		testDuration,
+		testNum,
 		testBigNum,
 		testBigNum,
 	)
@@ -116,18 +117,21 @@ func TestEncodeMeasureMsg(t *testing.T) {
 		if out.SocketId() != testNum ||
 			out.AckNo() != testNum ||
 			out.Rtt() != testDuration ||
+			out.Loss() != testNum ||
 			out.Rin() != testBigNum ||
 			out.Rout() != testBigNum {
 			t.Errorf(
-				"wrong message\ngot (%v, %v, %v, %v, %v)\nexpected (%v, %v, %v, %v, %v)",
+				"wrong message\ngot (%v, %v, %v, %v, %v, %v)\nexpected (%v, %v, %v, %v, %v, %v)",
 				out.SocketId(),
 				out.AckNo(),
 				out.Rtt(),
+				out.Loss(),
 				out.Rin(),
 				out.Rout(),
 				testNum,
 				testNum,
 				testDuration,
+				testNum,
 				testBigNum,
 				testBigNum,
 			)
