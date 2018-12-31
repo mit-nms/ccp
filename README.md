@@ -1,3 +1,6 @@
+This repository is an older experimental implementation of CCP, and is longer maintained.
+Please see https://github.com/ccp-project/portus.
+
 Congestion Control Plane
 ========================
 
